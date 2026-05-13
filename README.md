@@ -130,7 +130,7 @@ uv run lab2-prep \
 - `--print-pubkey` – Extract pubkey from PEM, print & exit
 - `--pem <path>` – PEM file (default: `lab1_identity.pem`)
 - `--udp-port <int>` – Local UDP port (required)
-- `--peer-pubkey <hex>` – Teammate pubkey hex (repeatable, **2 required** for your 2 teammates)
+- `--peer-pubkey <hex>` – Teammate pubkey hex (repeatable, use 1 for two-person testing or 2 for the full group)
 - `--peer <host:port>` – (Optional) Bypass IPv8 discovery and manually specify endpoint (repeatable)
 - `--test-udp` – Run UDP connectivity test (ping/pong)
 - `--debug` – Enable debug logging
@@ -167,6 +167,7 @@ uv run lab2-prep \
 
 **Lab 2 prep UDP connectivity issues:**
 - Check all three nodes are running
+- For two-person testing, pass the single teammate key once; do not duplicate it.
 - Verify firewall allows UDP on the specified ports
 - Confirm `--peer` addresses match where teammates are actually listening
 - If using different machines, ensure they can reach each other (try `ping` first)

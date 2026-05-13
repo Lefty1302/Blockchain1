@@ -12,7 +12,6 @@ from .lab2_udp_prep import (
     UdpPrepServer,
     PeerEndpoint,
     compute_canonical_order,
-    get_submitter_for_round,
     send_ping,
     announce_endpoint,
 )
@@ -43,7 +42,10 @@ def parse_args() -> argparse.Namespace:
         action="append",
         dest="peer_pubkeys",
         default=[],
-        help="Public key hex of a teammate (can be repeated, 2 required for the other team members)",
+        help=(
+            "Public key hex of a teammate (repeat once per teammate; "
+            "1 allowed for two-person testing, 2 for the full group)"
+        ),
     )
     parser.add_argument(
         "--peer",
@@ -63,6 +65,33 @@ def parse_args() -> argparse.Namespace:
         help="Enable debug logging",
     )
     return parser.parse_args()
+
+
+def validate_peer_args(
+    auto_discover: bool,
+    peers: list[str],
+    peer_pubkeys: list[str],
+) -> str | None:
+    """Return an error message if peer CLI arguments are inconsistent."""
+    if auto_discover:
+        if not peer_pubkeys or len(peer_pubkeys) not in (1, 2):
+            return (
+                "Error: provide 1 --peer-pubkey for two-person testing, "
+                "or 2 --peer-pubkey values for the full group"
+            )
+    elif len(peers) != len(peer_pubkeys):
+        return (
+            "Error: --peer and --peer-pubkey must have the same count "
+            f"({len(peers)} vs {len(peer_pubkeys)})"
+        )
+
+    if len(set(peer_pubkeys)) != len(peer_pubkeys):
+        return (
+            "Error: duplicate --peer-pubkey values are not useful; pass each "
+            "teammate key once"
+        )
+
+    return None
 
 
 async def run_prep_phase(
@@ -179,20 +208,31 @@ async def run_prep_phase(
         # Compute canonical order (lexicographic by pubkey)
         all_pubkeys = [local_pubkey] + [p.pubkey_hex for p in peers]
         canonical_order = compute_canonical_order(all_pubkeys)
+        full_group = len(canonical_order) == 3
+
+        if not full_group:
+            LOGGER.warning(
+                "Two-person test mode: canonical order contains %d participant(s); "
+                "the full Lab 2 flow still requires 3 registered keys",
+                len(canonical_order),
+            )
 
         LOGGER.info("=" * 60)
         LOGGER.info("Prep Phase Complete")
         LOGGER.info("=" * 60)
         LOGGER.info(f"Local pubkey: {local_pubkey[:16]}...")
-        LOGGER.info(f"Canonical order (submitter per round):")
+        if full_group:
+            LOGGER.info("Canonical order (submitter per round):")
+        else:
+            LOGGER.info("Canonical order (available participants):")
         for i, pk in enumerate(canonical_order, 1):
-            role = get_submitter_for_round(canonical_order, i)
-            is_me = " ← YOU" if pk == local_pubkey else ""
-            LOGGER.info(f"  Round {i}: {pk[:16]}...{is_me}")
+            label = f"Round {i}" if full_group else f"Participant {i}"
+            is_me = " <- YOU" if pk == local_pubkey else ""
+            LOGGER.info(f"  {label}: {pk[:16]}...{is_me}")
 
         LOGGER.info("\nPeer map:")
         for peer in peers:
-            LOGGER.info(f"  {peer.pubkey_hex[:16]}... → {peer.host}:{peer.port}")
+            LOGGER.info(f"  {peer.pubkey_hex[:16]}... -> {peer.host}:{peer.port}")
         LOGGER.info("=" * 60)
 
         return 0
@@ -259,24 +299,14 @@ def main() -> int:
     # Default to auto-discovery unless manual --peer is provided
     auto_discover = len(args.peers) == 0
 
-    # Validate peer args
-    if auto_discover:
-        # Auto-discovery mode: just need --peer-pubkey
-        if not args.peer_pubkeys or len(args.peer_pubkeys) != 2:
-            print(
-                "Error: --peer-pubkey is required (2 pubkeys for your 2 teammates)",
-                file=sys.stderr,
-            )
-            return 1
-    else:
-        # Manual mode: --peer and --peer-pubkey must match
-        if len(args.peers) != len(args.peer_pubkeys):
-            print(
-                f"Error: --peer and --peer-pubkey must have the same count "
-                f"({len(args.peers)} vs {len(args.peer_pubkeys)})",
-                file=sys.stderr,
-            )
-            return 1
+    peer_args_error = validate_peer_args(
+        auto_discover,
+        args.peers,
+        args.peer_pubkeys,
+    )
+    if peer_args_error:
+        print(peer_args_error, file=sys.stderr)
+        return 1
 
     # Load local public key
     try:
