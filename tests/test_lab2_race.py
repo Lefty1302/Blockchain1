@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from lab1_pow_ipv8.lab2.race import build_ordered_signature_list
-from lab1_pow_ipv8.lab2.team import load_team_config
+from lab2_relay_race.race import build_ordered_signature_list
+from lab2_relay_race.team import load_team_config
 
 
 def test_build_ordered_signature_list_uses_registration_order():

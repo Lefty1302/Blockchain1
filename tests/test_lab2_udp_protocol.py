@@ -5,8 +5,8 @@ import json
 import pytest
 from ipv8.keyvault.crypto import default_eccrypto
 
-from lab1_pow_ipv8.lab2.ids import UDP_GROUP_READY
-from lab1_pow_ipv8.lab2.udp_protocol import (
+from lab2_relay_race.ids import UDP_GROUP_READY
+from lab2_relay_race.udp_protocol import (
     DuplicateMessageError,
     SignedUdpCodec,
     UdpProtocolError,

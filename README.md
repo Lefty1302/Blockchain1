@@ -28,6 +28,7 @@ uv run lab1 --email netid@tudelft.nl --github-url https://github.com/vesk4000/Bi
 - `src/lab1_pow_ipv8/protocol.py` – IPv8 message payloads (`msg_id=1` and `msg_id=2`)
 - `src/lab1_pow_ipv8/client.py` – community + peer filtering + submission flow
 - `src/lab1_pow_ipv8/main.py` – CLI entrypoint
+- `src/lab2_relay_race/` - Lab 2 prep, signed UDP, and relay race client
 - `tests/test_pow.py` – local tests for PoW correctness
 
 ## Setup (UV)

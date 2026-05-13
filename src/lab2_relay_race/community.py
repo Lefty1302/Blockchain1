@@ -14,7 +14,7 @@ from ipv8.lazy_community import PacketDecodingError, lazy_wrapper
 from ipv8.messaging.lazy_payload import VariablePayload, vp_compile
 from ipv8.peer import Peer
 
-from ..constants import LAB2_COMMUNITY_ID_HEX, LAB2_SERVER_PUBLIC_KEY_HEX
+from lab1_pow_ipv8.constants import LAB2_COMMUNITY_ID_HEX, LAB2_SERVER_PUBLIC_KEY_HEX
 from .ids import (
     ENDPOINT_ANNOUNCEMENT,
     ENDPOINT_REQUEST,

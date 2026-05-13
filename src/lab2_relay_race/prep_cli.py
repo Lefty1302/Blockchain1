@@ -109,7 +109,7 @@ async def run_prep_phase(
     if auto_discover:
         assert teammate_pubkeys is not None
         # Use IPv8 discovery to get teammate endpoints
-        from ..libsodium_bootstrap import ensure_libsodium
+        from lab1_pow_ipv8.libsodium_bootstrap import ensure_libsodium
         from .community import build_lab2_community
         from ipv8.configuration import (
             ConfigBuilder,

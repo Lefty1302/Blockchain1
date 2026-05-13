@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lab1_pow_ipv8.lab2.ids import (
+from lab2_relay_race.ids import (
     CUSTOM_MESSAGE_IDS,
     SERVER_MESSAGE_IDS,
     ENDPOINT_ANNOUNCEMENT,
@@ -13,7 +13,7 @@ from lab1_pow_ipv8.lab2.ids import (
     UDP_NONCE_BROADCAST,
     UDP_SIGNATURE_REPLY,
 )
-from lab1_pow_ipv8.lab2.team import load_team_config
+from lab2_relay_race.team import load_team_config
 
 
 def test_lab2_message_ids_do_not_conflict():

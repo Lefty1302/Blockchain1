@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from lab1_pow_ipv8.lab2.udp_prep import PeerEndpoint
+from lab2_relay_race.udp_prep import PeerEndpoint
 
 
 def test_peer_endpoint_str():
