@@ -69,6 +69,12 @@ def parse_args() -> argparse.Namespace:
         help="Run UDP connectivity test after prep (ping/pong)",
     )
     parser.add_argument(
+        "--discovery-timeout",
+        type=float,
+        default=60.0,
+        help="Seconds to wait for IPv8 peer discovery in auto mode (default: 60)",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Enable debug logging",
@@ -124,6 +130,7 @@ async def run_prep_phase(
     auto_discover: bool = False,
     teammate_pubkeys: list[str] | None = None,
     key_file: str = "lab1_identity.pem",
+    discovery_timeout: float = 60.0,
 ) -> int:
     """
     Run the prep phase:
@@ -188,7 +195,7 @@ async def run_prep_phase(
                     f"Waiting for {len(teammate_pubkeys_bin)} teammate(s) to announce endpoints..."
                 )
                 discovered_endpoints = await overlay.wait_for_endpoints(
-                    teammate_pubkeys_bin, timeout=10.0
+                    teammate_pubkeys_bin, timeout=discovery_timeout
                 )
 
                 if len(discovered_endpoints) < len(teammate_pubkeys_bin):
@@ -381,6 +388,7 @@ def main() -> int:
                 auto_discover=auto_discover,
                 teammate_pubkeys=args.peer_pubkeys if auto_discover else None,
                 key_file=args.pem,
+                discovery_timeout=args.discovery_timeout,
             )
         )
     except KeyboardInterrupt:

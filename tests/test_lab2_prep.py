@@ -9,6 +9,7 @@ from lab1_pow_ipv8.lab2_udp_prep import (
     PeerEndpoint,
 )
 from lab1_pow_ipv8.lab2_main import validate_peer_args
+from lab1_pow_ipv8.lab2_discovery import build_lab2_discovery_community
 
 
 def test_compute_canonical_order():
@@ -75,3 +76,9 @@ def test_validate_peer_args_rejects_duplicate_pubkeys():
     error = validate_peer_args(True, [], ["peer-a", "peer-a"])
     assert error is not None
     assert "duplicate" in error
+
+
+def test_lab2_discovery_uses_lab2_community_id():
+    """Lab 2 discovery should not accidentally join the Lab 1 community."""
+    community = build_lab2_discovery_community()
+    assert community.community_id.hex() == "4c61623247726f75705369676e696e6732303236"

@@ -132,6 +132,7 @@ uv run lab2-prep \
 - `--peer-pubkey <hex>` – Teammate pubkey hex (repeatable, use 1 for two-person testing or 2 for the full group)
 - `--peer <host:port>` – (Optional) Bypass IPv8 discovery and manually specify endpoint (repeatable)
 - `--test-udp` – Run UDP connectivity test (ping/pong)
+- `--discovery-timeout <seconds>` – Seconds to wait for IPv8 peer discovery in auto mode (default: 60)
 - `--debug` – Enable debug logging
 
 ### How it works

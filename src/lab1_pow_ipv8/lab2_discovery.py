@@ -14,7 +14,7 @@ from ipv8.messaging.lazy_payload import VariablePayload, vp_compile
 from ipv8.messaging.payload_headers import BinMemberAuthenticationPayload
 from ipv8.peer import Peer
 
-from .constants import COMMUNITY_ID_HEX
+from .constants import LAB2_COMMUNITY_ID_HEX
 
 LOGGER = logging.getLogger("lab2_discovery")
 
@@ -44,7 +44,7 @@ def build_lab2_discovery_community():
     """Build IPv8 community for endpoint discovery."""
 
     class Lab2DiscoveryCommunity(Community):
-        community_id = bytes.fromhex(COMMUNITY_ID_HEX)
+        community_id = bytes.fromhex(LAB2_COMMUNITY_ID_HEX)
 
         def __init__(self, settings: CommunitySettings) -> None:
             super().__init__(settings)
