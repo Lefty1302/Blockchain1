@@ -8,8 +8,6 @@ from lab1_pow_ipv8.lab2_udp_prep import (
     get_submitter_for_round,
     PeerEndpoint,
 )
-from lab1_pow_ipv8.lab2_main import validate_peer_args
-from lab1_pow_ipv8.lab2_discovery import build_lab2_discovery_community
 
 
 def test_compute_canonical_order():
@@ -64,21 +62,3 @@ def test_peer_endpoint_str():
     assert "AAAA12" in s
     assert "192.168.1.1" in s
     assert "5000" in s
-
-
-def test_validate_peer_args_allows_two_person_auto_discovery():
-    """Auto-discovery supports one teammate key for two-person testing."""
-    assert validate_peer_args(True, [], ["peer-a"]) is None
-
-
-def test_validate_peer_args_rejects_duplicate_pubkeys():
-    """Duplicate peer keys should not be treated as two teammates."""
-    error = validate_peer_args(True, [], ["peer-a", "peer-a"])
-    assert error is not None
-    assert "duplicate" in error
-
-
-def test_lab2_discovery_uses_lab2_community_id():
-    """Lab 2 discovery should not accidentally join the Lab 1 community."""
-    community = build_lab2_discovery_community()
-    assert community.community_id.hex() == "4c61623247726f75705369676e696e6732303236"

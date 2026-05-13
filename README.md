@@ -89,27 +89,27 @@ Lab 2 requires fast UDP coordination between three teammates. The **prep phase**
 
 ### Quick Start
 
-**Step 1: Extract your public key** (share with teammates via WhatsApp)
+**Step 1: Extract your public key** 
 
 ```powershell
 uv run lab2-prep --print-pubkey --pem lab1_identity.pem
 ```
+
+Then make a new *.txt file in ./pubkeys with your public key
 
 **Step 2: Run prep with all three team members**
 
 All three nodes run simultaneously (same command on each machine with different `--udp-port`):
 
 ```powershell
-uv run lab2-prep \
-  --udp-port 5000 \
-  --peer-pubkey <TEAMMATE_A_PUBKEY> \
-  --peer-pubkey <TEAMMATE_B_PUBKEY> \
-  --test-udp
+uv run lab2-prep --udp-port 5000 --test-udp
 ```
 
-IPv8 automatically discovers teammates' UDP endpoints. Each node just needs:
+Teammate public keys are auto-loaded from `./pubkeys/*.txt` (whichever file is not your own key). IPv8 then discovers each teammate's UDP endpoint. Each node just needs:
 - Its own UDP port (different for each: 5000, 5001, 5002)
-- The two teammates' public keys (same for all three)
+- A populated `./pubkeys/` directory (one `.txt` per team member)
+
+Override with `--peer-pubkey <hex>` if you want to bypass the directory (accepts 1 or 2 values for partial-team dev runs).
 
 Expected output: canonical order, peer map, and ✓ connectivity test.
 
@@ -128,24 +128,20 @@ uv run lab2-prep \
 - `--print-pubkey` – Extract pubkey from PEM, print & exit
 - `--pem <path>` – PEM file (default: `lab1_identity.pem`)
 - `--udp-port <int>` – Local UDP port (required)
-- `--udp-host <host>` – UDP host/IP to advertise (default: auto-detect local LAN IPv4; use `127.0.0.1` for same-machine testing)
-- `--peer-pubkey <hex>` – Teammate pubkey hex (repeatable, use 1 for two-person testing or 2 for the full group)
+- `--peer-pubkey <hex>` – Teammate pubkey hex (repeatable, 1 or 2 values; omit to auto-load from `./pubkeys/`)
 - `--peer <host:port>` – (Optional) Bypass IPv8 discovery and manually specify endpoint (repeatable)
 - `--test-udp` – Run UDP connectivity test (ping/pong)
-- `--discovery-timeout <seconds>` – Seconds to wait for IPv8 peer discovery in auto mode (default: 60)
-- `--ipv8-port <port>` – Local UDP port for IPv8 peer discovery (default: 8090; separate from `--udp-port`)
-- `--lan-discovery` – Also use IPv8 UDP broadcast discovery on the local network
 - `--debug` – Enable debug logging
 
 ### How it works
 
 **Default mode (IPv8 auto-discovery):**
 1. Extracts your Ed25519 public key from Lab 1 PEM file
-2. Advertises your UDP endpoint over IPv8
-3. Uses IPv8 peer discovery to find teammates and request their UDP endpoints
-4. Sends UDP hello/ping packets to every discovered teammate endpoint
-5. Sorts all three pubkeys lexicographically → canonical order
-6. Uses canonical order to assign fixed submitters: Round 1 → sorted[0], Round 2 → sorted[1], Round 3 → sorted[2]
+2. Loads teammate public keys from `./pubkeys/` (unless `--peer-pubkey` is passed)
+3. Joins the Lab 2 IPv8 community and uses peer discovery to find teammates' UDP endpoints (only peers whose pubkey matches a teammate are accepted)
+4. All nodes exchange endpoint information via IPv8 messages, then sort all three pubkeys lexicographically → canonical order
+5. Uses canonical order to assign fixed submitters: Round 1 → sorted[0], Round 2 → sorted[1], Round 3 → sorted[2]
+6. Tests connectivity via UDP ping/pong
 7. Reports peer map and submitter assignments
 
 **Manual mode (optional `--peer`):**
@@ -169,12 +165,7 @@ uv run lab2-prep \
 
 **Lab 2 prep UDP connectivity issues:**
 - Check all three nodes are running
-- For two-person testing, pass the single teammate key once; do not duplicate it.
-- If auto-detected UDP host is wrong, pass `--udp-host <your-lan-ip>`.
-- Verify firewall allows UDP on the prep port (`--udp-port`) and IPv8 discovery port (`--ipv8-port`, default `8090`).
-- If both machines are on the same LAN and public IPv8 bootstrap stays at 0 peers, try `--lan-discovery`.
+- Verify firewall allows UDP on the specified ports
 - Confirm `--peer` addresses match where teammates are actually listening
 - If using different machines, ensure they can reach each other (try `ping` first)
 
----
-Hello!

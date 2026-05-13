@@ -82,8 +82,50 @@ def _has_libsodium_available() -> bool:
     return False
 
 
+_SYSTEM_LIB_SEARCH_DIRS: tuple[str, ...] = (
+    "/opt/homebrew/lib",   # Apple Silicon Homebrew
+    "/usr/local/lib",      # Intel Homebrew / manual installs
+    "/usr/lib",
+    "/usr/lib/x86_64-linux-gnu",
+    "/usr/lib/aarch64-linux-gnu",
+)
+
+_SODIUM_DYLIB_NAMES: tuple[str, ...] = (
+    "libsodium.dylib",
+    "libsodium.so",
+    "libsodium.so.26",
+    "libsodium.so.23",
+)
+
+
+def _patch_find_library_for_sodium(full_path: str) -> None:
+    """
+    Monkey-patch ctypes.util.find_library so downstream consumers (libnacl)
+    resolve 'sodium' to the full path we already found.  Called once.
+    """
+    import ctypes.util as _cu
+
+    _orig = _cu.find_library
+
+    def _patched(name: str) -> str | None:
+        if name == "sodium":
+            return full_path
+        return _orig(name)
+
+    _cu.find_library = _patched
+
+
 def _find_system_libsodium() -> bool:
-    return bool(ctypes.util.find_library("sodium"))
+    if ctypes.util.find_library("sodium"):
+        return True
+    for directory in _SYSTEM_LIB_SEARCH_DIRS:
+        p = Path(directory)
+        for name in _SODIUM_DYLIB_NAMES:
+            candidate = p / name
+            if candidate.exists():
+                _patch_find_library_for_sodium(str(candidate))
+                return True
+    return False
 
 
 def _candidate_dll_dirs() -> Iterable[Path]:

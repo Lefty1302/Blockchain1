@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
-from typing import Any
+from time import time
 
 from cryptography.exceptions import UnsupportedAlgorithm
 from ipv8.community import Community, CommunitySettings
-from ipv8.lazy_community import lazy_wrapper
+from ipv8.lazy_community import PacketDecodingError, lazy_wrapper
 from ipv8.messaging.lazy_payload import VariablePayload, vp_compile
-from ipv8.messaging.payload_headers import BinMemberAuthenticationPayload
 from ipv8.peer import Peer
 
 from .constants import LAB2_COMMUNITY_ID_HEX
@@ -52,80 +50,93 @@ def build_lab2_discovery_community():
                 EndpointAnnouncementPayload, self.on_endpoint_announcement
             )
             self.add_message_handler(EndpointRequestPayload, self.on_endpoint_request)
-            self._unsupported_curve_packets_seen: set[tuple[str, int, str]] = set()
-            self._wrap_handlers_to_ignore_unsupported_curves()
 
             self.local_endpoint: tuple[str, int] | None = None  # (host, port)
             self.peer_endpoints: dict[bytes, tuple[str, int]] = (
                 {}
             )  # pubkey_bin -> (host, port)
             self.endpoint_event = asyncio.Event()
+            self.target_pubkeys: set[bytes] = set()
 
-        def _wrap_handlers_to_ignore_unsupported_curves(self) -> None:
-            """Drop IPv8 packets whose legacy public-key curve is unsupported."""
-            for msg_id, handler in enumerate(self.decode_map):
-                if handler is not None:
-                    self.decode_map[msg_id] = self._ignore_unsupported_curve(
-                        msg_id, handler
-                    )
-
-        def _ignore_unsupported_curve(
-            self,
-            msg_id: int,
-            handler: Callable[[Any, bytes], Any],
-        ) -> Callable[[Any, bytes], Any]:
-            def wrapper(source_address: Any, data: bytes) -> Any:
-                try:
-                    return handler(source_address, data)
-                except UnsupportedAlgorithm as exc:
-                    self._log_unsupported_curve_packet(
-                        msg_id, source_address, data, exc
-                    )
-                    return None
-
-            return wrapper
-
-        def _log_unsupported_curve_packet(
-            self,
-            msg_id: int,
-            source_address: Any,
-            data: bytes,
-            exc: UnsupportedAlgorithm,
-        ) -> None:
-            pubkey_prefix = self._auth_pubkey_prefix(data)
-            source = repr(source_address)
-            error = str(exc)
-            key = (source, msg_id, error)
-            pubkey_suffix = (
-                f" (auth pubkey prefix {pubkey_prefix})" if pubkey_prefix else ""
-            )
-            message = (
-                "Ignoring IPv8 message %d from %s with unsupported legacy "
-                "public-key curve: %s%s"
-            )
-
-            if key in self._unsupported_curve_packets_seen:
-                self.logger.debug(message, msg_id, source, error, pubkey_suffix)
-                return
-
-            self._unsupported_curve_packets_seen.add(key)
-            self.logger.warning(message, msg_id, source, error, pubkey_suffix)
-
-        def _auth_pubkey_prefix(self, data: bytes) -> str | None:
+        def _verify_signature(self, auth, data: bytes):  # type: ignore[override]
             try:
-                auth, _ = self.serializer.unpack_serializable(
-                    BinMemberAuthenticationPayload,
-                    data,
-                    offset=23,
+                return super()._verify_signature(auth, data)
+            except UnsupportedAlgorithm as exc:
+                self.logger.debug(
+                    "Dropping packet with unsupported public-key curve: %s",
+                    exc,
                 )
-            except Exception:
-                return None
+                return False, data
 
-            return auth.public_key_bin.hex()[:24]
+        def on_packet(self, packet, warn_unknown: bool = True) -> None:  # type: ignore[override]
+            source_address, data = packet
+            probable_peer = self.network.get_verified_by_address(source_address)
+            if probable_peer:
+                probable_peer.last_response = time()
+            if self._prefix != data[:22]:
+                return
+            msg_id = data[22]
+            handler = self.decode_map[msg_id]
+            if handler is not None:
+                try:
+                    result = handler(source_address, data)
+                    if asyncio.iscoroutine(result):
+                        self.register_anonymous_task(
+                            "on_packet",
+                            asyncio.ensure_future(result),
+                            ignore=(Exception,),
+                        )
+                except PacketDecodingError as exc:
+                    self.logger.debug(
+                        "Dropping legacy or invalid discovery packet from %s:%d: %s",
+                        source_address[0],
+                        source_address[1],
+                        exc,
+                    )
+                except Exception:
+                    self.logger.exception("Exception occurred while handling packet!")
+            elif warn_unknown:
+                self.logger.warning(
+                    "Received unknown message: %d from (%s, %d)",
+                    msg_id,
+                    *source_address,
+                )
+
+        def set_target_pubkeys(self, pubkeys: list[bytes]) -> None:
+            self.target_pubkeys = set(pubkeys)
 
         def started(self) -> None:
             """Called when community starts."""
-            return
+
+            async def announce_to_team() -> None:
+                if not self.local_endpoint:
+                    return
+                if self.target_pubkeys and self.target_pubkeys.issubset(
+                    self.peer_endpoints
+                ):
+                    self.cancel_pending_task("announce_to_team")
+                    return
+                host, port = self.local_endpoint
+                host_port_str = f"{host}:{port}"
+                for peer in self.get_peers():
+                    peer_pubkey = peer.public_key.key_to_bin()
+                    if (
+                        peer_pubkey in self.target_pubkeys
+                        and peer_pubkey not in self.peer_endpoints
+                    ):
+                        try:
+                            self.ez_send(
+                                peer,
+                                EndpointAnnouncementPayload(host_port_str, port),
+                            )
+                        except Exception as exc:
+                            self.logger.debug(
+                                "Failed to proactively announce to peer: %s", exc
+                            )
+
+            self.register_task(
+                "announce_to_team", announce_to_team, interval=1.0, delay=0.1
+            )
 
         def set_local_endpoint(self, host: str, port: int) -> None:
             """Set this node's UDP endpoint."""
@@ -170,7 +181,7 @@ def build_lab2_discovery_community():
 
             self.peer_endpoints[peer_pubkey] = (host, port)
             LOGGER.info(
-                f"Discovered endpoint: {peer_pubkey.hex()[:16]}... @ {host}:{port}"
+                f"Discovered endpoint: ...{peer_pubkey.hex()[-16:]} @ {host}:{port}"
             )
             self.endpoint_event.set()
 
@@ -198,47 +209,24 @@ def build_lab2_discovery_community():
             Returns a dict: pubkey_bin -> (host, port)
             """
             start_time = asyncio.get_event_loop().time()
-            target_pubkeys_set = set(target_pubkeys)
-            announced_to: set[bytes] = set()
-            last_request_sent: dict[bytes, float] = {}
-            last_status_log = 0.0
 
             while asyncio.get_event_loop().time() - start_time < timeout:
-                now = asyncio.get_event_loop().time()
-                if now - last_status_log >= 5.0:
-                    self._log_discovery_status(target_pubkeys_set)
-                    last_status_log = now
-
                 # Check if we have all endpoints
                 found_all = all(pk in self.peer_endpoints for pk in target_pubkeys)
                 if found_all:
                     return {pk: self.peer_endpoints[pk] for pk in target_pubkeys}
 
-                # Send our endpoint and request theirs once IPv8 has found a target peer.
+                # Send requests to peers we're missing
                 for peer in self.get_peers():
                     peer_pubkey = peer.public_key.key_to_bin()
-                    if peer_pubkey not in target_pubkeys_set:
-                        continue
-
-                    if peer_pubkey not in announced_to:
-                        self.announce_endpoint_to_peers([peer])
-                        announced_to.add(peer_pubkey)
-
-                    if peer_pubkey in self.peer_endpoints:
-                        continue
-
-                    if now - last_request_sent.get(peer_pubkey, 0.0) < 0.5:
-                        continue
-
-                    try:
-                        self.ez_send(peer, EndpointRequestPayload())
-                        last_request_sent[peer_pubkey] = now
-                    except Exception as exc:
-                        LOGGER.debug(
-                            "Failed to request endpoint from %s...: %s",
-                            peer_pubkey.hex()[:16],
-                            exc,
-                        )
+                    if (
+                        peer_pubkey in target_pubkeys
+                        and peer_pubkey not in self.peer_endpoints
+                    ):
+                        try:
+                            self.ez_send(peer, EndpointRequestPayload())
+                        except Exception:
+                            pass
 
                 # Wait a bit before retrying
                 await asyncio.sleep(0.1)
@@ -249,20 +237,5 @@ def build_lab2_discovery_community():
                 for pk in target_pubkeys
                 if pk in self.peer_endpoints
             }
-
-        def _log_discovery_status(self, target_pubkeys: set[bytes]) -> None:
-            peers = self.get_peers()
-            matching_peers = [
-                peer for peer in peers if peer.public_key.key_to_bin() in target_pubkeys
-            ]
-            walkable_count = len(self.get_walkable_addresses())
-            LOGGER.info(
-                "IPv8 discovery status: peers=%d, matching=%d, walkable=%d, "
-                "endpoints=%d",
-                len(peers),
-                len(matching_peers),
-                walkable_count,
-                len(self.peer_endpoints),
-            )
 
     return Lab2DiscoveryCommunity
