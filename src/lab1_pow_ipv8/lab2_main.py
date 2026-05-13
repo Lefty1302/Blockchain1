@@ -7,11 +7,12 @@ import asyncio
 import logging
 import sys
 
-from .lab2_keyutil import extract_public_key_hex
+from .lab2_keyutil import extract_public_key_hex, load_team_pubkeys
 from .lab2_udp_prep import (
     UdpPrepServer,
     PeerEndpoint,
     compute_canonical_order,
+    get_primary_outbound_ip,
     get_submitter_for_round,
     send_ping,
     announce_endpoint,
@@ -123,10 +124,12 @@ async def run_prep_phase(
             overlay = next(
                 o for o in ipv8.overlays if isinstance(o, Lab2DiscoveryCommunity)
             )
-            overlay.set_local_endpoint("127.0.0.1", local_port)  # TODO: use external IP
+            local_ip = get_primary_outbound_ip()
+            overlay.set_local_endpoint(local_ip, local_port)
 
             # Convert teammate pubkey strings to bytes
             teammate_pubkeys_bin = [bytes.fromhex(pk) for pk in teammate_pubkeys]
+            overlay.set_target_pubkeys(teammate_pubkeys_bin)
 
             # Request endpoints from teammates
             LOGGER.info(
@@ -166,7 +169,7 @@ async def run_prep_phase(
         # Announce our endpoint to all known peers
         LOGGER.info(f"Announcing endpoint to {len(peers)} peer(s)")
         await announce_endpoint(
-            "127.0.0.1",  # For local testing; use external IP in production
+            get_primary_outbound_ip(),
             local_port,
             peers,
             local_pubkey,
@@ -261,13 +264,31 @@ def main() -> int:
 
     # Validate peer args
     if auto_discover:
-        # Auto-discovery mode: just need --peer-pubkey
-        if not args.peer_pubkeys or len(args.peer_pubkeys) != 2:
-            print(
-                "Error: --peer-pubkey is required (2 pubkeys for your 2 teammates)",
-                file=sys.stderr,
-            )
-            return 1
+        # Auto-discovery mode: need pubkeys from --peer-pubkey or pubkeys/
+        if args.peer_pubkeys:
+            if not (1 <= len(args.peer_pubkeys) <= 2):
+                print(
+                    "Error: pass 1 or 2 --peer-pubkey values (for the full team you want 2)",
+                    file=sys.stderr,
+                )
+                return 1
+        else:
+            # Try to load from pubkeys/ directory; need local pubkey first
+            try:
+                _local_pk = extract_public_key_hex(args.pem)
+            except Exception as exc:
+                print(f"Error loading public key: {exc}", file=sys.stderr)
+                return 1
+            try:
+                args.peer_pubkeys = load_team_pubkeys(_local_pk)
+                LOGGER.info(f"Loaded {len(args.peer_pubkeys)} teammate pubkey(s) from pubkeys/")
+            except RuntimeError as exc:
+                print(
+                    f"Error: {exc}\n"
+                    "Provide teammate keys via --peer-pubkey or place them in pubkeys/.",
+                    file=sys.stderr,
+                )
+                return 1
     else:
         # Manual mode: --peer and --peer-pubkey must match
         if len(args.peers) != len(args.peer_pubkeys):

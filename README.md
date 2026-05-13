@@ -102,16 +102,14 @@ Then make a new *.txt file in ./pubkeys with your public key
 All three nodes run simultaneously (same command on each machine with different `--udp-port`):
 
 ```powershell
-uv run lab2-prep \
-  --udp-port 5000 \
-  --peer-pubkey <TEAMMATE_A_PUBKEY> \
-  --peer-pubkey <TEAMMATE_B_PUBKEY> \
-  --test-udp
+uv run lab2-prep --udp-port 5000 --test-udp
 ```
 
-IPv8 automatically discovers teammates' UDP endpoints. Each node just needs:
+Teammate public keys are auto-loaded from `./pubkeys/*.txt` (whichever file is not your own key). IPv8 then discovers each teammate's UDP endpoint. Each node just needs:
 - Its own UDP port (different for each: 5000, 5001, 5002)
-- The two teammates' public keys (same for all three)
+- A populated `./pubkeys/` directory (one `.txt` per team member)
+
+Override with `--peer-pubkey <hex>` if you want to bypass the directory (accepts 1 or 2 values for partial-team dev runs).
 
 Expected output: canonical order, peer map, and ✓ connectivity test.
 
@@ -130,7 +128,7 @@ uv run lab2-prep \
 - `--print-pubkey` – Extract pubkey from PEM, print & exit
 - `--pem <path>` – PEM file (default: `lab1_identity.pem`)
 - `--udp-port <int>` – Local UDP port (required)
-- `--peer-pubkey <hex>` – Teammate pubkey hex (repeatable, **2 required** for your 2 teammates)
+- `--peer-pubkey <hex>` – Teammate pubkey hex (repeatable, 1 or 2 values; omit to auto-load from `./pubkeys/`)
 - `--peer <host:port>` – (Optional) Bypass IPv8 discovery and manually specify endpoint (repeatable)
 - `--test-udp` – Run UDP connectivity test (ping/pong)
 - `--debug` – Enable debug logging
@@ -139,9 +137,9 @@ uv run lab2-prep \
 
 **Default mode (IPv8 auto-discovery):**
 1. Extracts your Ed25519 public key from Lab 1 PEM file
-2. Uses IPv8 peer discovery to automatically find teammates' UDP endpoints
-3. All nodes exchange endpoint information via IPv8 messages
-4. Sorts all three pubkeys lexicographically → canonical order
+2. Loads teammate public keys from `./pubkeys/` (unless `--peer-pubkey` is passed)
+3. Joins the Lab 2 IPv8 community and uses peer discovery to find teammates' UDP endpoints (only peers whose pubkey matches a teammate are accepted)
+4. All nodes exchange endpoint information via IPv8 messages, then sort all three pubkeys lexicographically → canonical order
 5. Uses canonical order to assign fixed submitters: Round 1 → sorted[0], Round 2 → sorted[1], Round 3 → sorted[2]
 6. Tests connectivity via UDP ping/pong
 7. Reports peer map and submitter assignments

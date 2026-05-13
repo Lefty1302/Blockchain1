@@ -5,10 +5,22 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import socket
 from dataclasses import dataclass
 from typing import Optional
 
 LOGGER = logging.getLogger("lab2_udp_prep")
+
+
+def get_primary_outbound_ip() -> str:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))  # no traffic sent, just route lookup
+        return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
 
 
 @dataclass
