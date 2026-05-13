@@ -83,9 +83,9 @@ uv run lab1 --email vmitev@tudelft.nl --github-url https://github.com/vesk4000/B
 - The client ignores responses from peers whose public key does not match the given server key.
 - Keep your `.pem` file safe: this is your identity for later labs.
 
-## Lab 2 – Coordinated Group Signing Prep Phase
+## Lab 2 - Coordinated Group Signing Relay
 
-Lab 2 requires fast UDP coordination between three teammates. The **prep phase** sets this up before the timed challenge.
+Lab 2 uses IPv8 for server messages and teammate discovery, then signed direct UDP for the timed relay race.
 
 ### Quick Start
 
@@ -97,21 +97,29 @@ uv run lab2-prep --print-pubkey --pem lab1_identity.pem
 
 Then make a new *.txt file in ./pubkeys with your public key
 
-**Step 2: Run prep with all three team members**
+**Step 2: Test UDP connectivity**
 
-All three nodes run simultaneously (same command on each machine with different `--udp-port`):
+All three nodes can run the UDP test simultaneously with different `--udp-port` values:
 
 ```powershell
-uv run lab2-prep --udp-port 5000 --test-udp
+uv run lab2-prep --pem lab1_identity.pem --udp-port 5000 --test-udp
 ```
 
-Teammate public keys are auto-loaded from `./pubkeys/*.txt` (whichever file is not your own key). IPv8 then discovers each teammate's UDP endpoint. Each node just needs:
-- Its own UDP port (different for each: 5000, 5001, 5002)
-- A populated `./pubkeys/` directory (one `.txt` per team member)
+`lab2-prep` loads the explicit role order from `lab2_team.json`, discovers teammate UDP endpoints over IPv8, and tests UDP ping/pong reachability. It does not write a handoff state file.
 
-Override with `--peer-pubkey <hex>` if you want to bypass the directory (accepts 1 or 2 values for partial-team dev runs).
+**Step 3: Run the relay race**
 
-Expected output: canonical order, peer map, and ✓ connectivity test.
+All three nodes run the relay command at the same time:
+
+```powershell
+uv run lab2-race --pem lab1_identity.pem --udp-port 5000
+```
+
+The relay command performs its own discovery phase, waits for the Lab 2 server, then enters the active phase. Node A registers the group and sends `GroupReady`; Node B and C wait for it. Submitter order is fixed by `lab2_team.json`:
+
+- Round 1 / Node A: `pubkeys/vesk.txt`
+- Round 2 / Node B: `pubkeys/miro.txt`
+- Round 3 / Node C: `pubkeys/dany.txt`
 
 **Optional: Manual endpoint mode** (if you know IPs ahead of time)
 
@@ -125,24 +133,33 @@ uv run lab2-prep \
 
 ### Lab 2 Prep Options
 
-- `--print-pubkey` – Extract pubkey from PEM, print & exit
-- `--pem <path>` – PEM file (default: `lab1_identity.pem`)
-- `--udp-port <int>` – Local UDP port (required)
-- `--peer-pubkey <hex>` – Teammate pubkey hex (repeatable, 1 or 2 values; omit to auto-load from `./pubkeys/`)
-- `--peer <host:port>` – (Optional) Bypass IPv8 discovery and manually specify endpoint (repeatable)
-- `--test-udp` – Run UDP connectivity test (ping/pong)
-- `--debug` – Enable debug logging
+- `--print-pubkey` - Extract pubkey from PEM, print and exit
+- `--pem <path>` - PEM file (default: `lab1_identity.pem`)
+- `--team-config <path>` - Explicit A/B/C role config (default: `lab2_team.json`)
+- `--udp-port <int>` - Local UDP port (required)
+- `--peer-pubkey <hex>` - Teammate pubkey override for partial-team tests
+- `--peer <host:port>` - Optional manual endpoint for UDP tests
+- `--test-udp` - Run UDP connectivity test
+- `--debug` - Enable debug logging
+
+### Lab 2 Race Options
+
+- `--pem <path>` - PEM file for the Lab 1 key
+- `--team-config <path>` - Explicit A/B/C role config
+- `--udp-port <int>` - Local UDP port for signed relay traffic
+- `--discovery-timeout <seconds>` - Teammate discovery timeout
+- `--server-timeout <seconds>` - Lab 2 server discovery timeout
+- `--debug` - Enable debug logging
 
 ### How it works
 
 **Default mode (IPv8 auto-discovery):**
 1. Extracts your Ed25519 public key from Lab 1 PEM file
-2. Loads teammate public keys from `./pubkeys/` (unless `--peer-pubkey` is passed)
+2. Loads teammate public keys and A/B/C roles from `lab2_team.json`
 3. Joins the Lab 2 IPv8 community and uses peer discovery to find teammates' UDP endpoints (only peers whose pubkey matches a teammate are accepted)
-4. All nodes exchange endpoint information via IPv8 messages, then sort all three pubkeys lexicographically → canonical order
-5. Uses canonical order to assign fixed submitters: Round 1 → sorted[0], Round 2 → sorted[1], Round 3 → sorted[2]
-6. Tests connectivity via UDP ping/pong
-7. Reports peer map and submitter assignments
+4. Uses high-range custom IPv8 endpoint messages (`200`, `201`) to avoid server ID conflicts
+5. Uses signed UDP messages (`210`-`214`) for race coordination
+6. Builds bundle signatures in the exact registration order from `lab2_team.json`
 
 **Manual mode (optional `--peer`):**
 - Use `--peer host:port` to manually specify teammates' endpoints instead of auto-discovery
