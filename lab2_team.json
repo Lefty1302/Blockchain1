@@ -1,0 +1,19 @@
+{
+  "members": [
+    {
+      "role": "A",
+      "name": "vesk",
+      "pubkey_file": "pubkeys/vesk.txt"
+    },
+    {
+      "role": "B",
+      "name": "miro",
+      "pubkey_file": "pubkeys/miro.txt"
+    },
+    {
+      "role": "C",
+      "name": "dany",
+      "pubkey_file": "pubkeys/dany.txt"
+    }
+  ]
+}

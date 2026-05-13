@@ -11,17 +11,14 @@ from .keyutil import (
     extract_public_key_hex,
     fmt_peer,
     load_pubkey_name_map,
-    load_team_pubkeys,
 )
+from .team import TeamConfig, load_team_config
 from .udp_prep import (
     UdpPrepServer,
     PeerEndpoint,
-    compute_canonical_order,
     get_primary_outbound_ip,
-    get_submitter_for_round,
     send_ping,
     announce_endpoint,
-    ensure_udp_connectivity,
 )
 
 
@@ -38,6 +35,11 @@ def parse_args() -> argparse.Namespace:
         "--pem",
         default="lab1_identity.pem",
         help="PEM file path for your IPv8 private key (default: lab1_identity.pem)",
+    )
+    parser.add_argument(
+        "--team-config",
+        default="lab2_team.json",
+        help="Lab 2 team config with explicit A/B/C role order",
     )
     parser.add_argument(
         "--udp-port",
@@ -86,6 +88,7 @@ async def run_prep_phase(
     test_udp: bool,
     timeout: int,
     name_map: dict[str, str],
+    team_config: TeamConfig,
     auto_discover: bool = False,
     teammate_pubkeys: list[str] | None = None,
     key_file: str = "lab1_identity.pem",
@@ -96,7 +99,7 @@ async def run_prep_phase(
     2. Otherwise: start UDP listener directly.
     3. Announce endpoint to peers.
     4. Optionally run UDP connectivity test.
-    5. Report canonical order and peer map.
+    5. Report configured role order and peer map.
     """
     if auto_discover:
         if not teammate_pubkeys:
@@ -109,7 +112,7 @@ async def run_prep_phase(
         assert teammate_pubkeys is not None
         # Use IPv8 discovery to get teammate endpoints
         from ..libsodium_bootstrap import ensure_libsodium
-        from .community import build_lab2_discovery_community
+        from .community import build_lab2_community
         from ipv8.configuration import (
             ConfigBuilder,
             Strategy,
@@ -121,11 +124,11 @@ async def run_prep_phase(
         ensure_libsodium()
         LOGGER.info("Starting IPv8 discovery for teammate endpoints...")
 
-        Lab2DiscoveryCommunity = build_lab2_discovery_community()
+        Lab2Community = build_lab2_community()
         builder = ConfigBuilder().clear_keys().clear_overlays()
         builder.add_key("lab2", "curve25519", key_file)
         builder.add_overlay(
-            "Lab2DiscoveryCommunity",
+            "Lab2Community",
             "lab2",
             [WalkerDefinition(Strategy.RandomWalk, 30, {"timeout": 3.0})],
             default_bootstrap_defs,
@@ -135,14 +138,12 @@ async def run_prep_phase(
 
         ipv8 = IPv8(
             builder.finalize(),
-            extra_communities={"Lab2DiscoveryCommunity": Lab2DiscoveryCommunity},
+            extra_communities={"Lab2Community": Lab2Community},
         )
         await ipv8.start()
 
         try:
-            overlay = next(
-                o for o in ipv8.overlays if isinstance(o, Lab2DiscoveryCommunity)
-            )
+            overlay = next(o for o in ipv8.overlays if isinstance(o, Lab2Community))
             local_ip = get_primary_outbound_ip()
             overlay.set_local_endpoint(local_ip, local_port)
 
@@ -219,24 +220,25 @@ async def run_prep_phase(
             LOGGER.info("Running UDP connectivity test (ping/pong)...")
             await run_udp_test(server, peers, local_pubkey, name_map)
 
-        # Compute canonical order (lexicographic by pubkey)
-        all_pubkeys = [local_pubkey] + [p.pubkey_hex for p in peers]
-        canonical_order = compute_canonical_order(all_pubkeys)
-
         LOGGER.info("=" * 60)
         LOGGER.info("Prep Phase Complete")
         LOGGER.info("=" * 60)
         LOGGER.info(f"Local pubkey: {fmt_peer(local_pubkey, name_map)}")
-        LOGGER.info(f"Canonical order (submitter per round):")
-        for i, pk in enumerate(canonical_order, 1):
-            role = get_submitter_for_round(canonical_order, i)
-            is_me = " ← YOU" if pk == local_pubkey else ""
-            LOGGER.info(f"  Round {i}: {fmt_peer(pk, name_map)}{is_me}")
+        LOGGER.info("Configured order (submitter per round):")
+        for round_number, member in enumerate(team_config.members, 1):
+            is_me = " <- YOU" if member.pubkey_hex == local_pubkey else ""
+            LOGGER.info(
+                "  Round %d / Node %s: %s%s",
+                round_number,
+                member.role,
+                fmt_peer(member.pubkey_hex, name_map),
+                is_me,
+            )
 
         LOGGER.info("\nPeer map:")
         for peer in peers:
             LOGGER.info(
-                f"  {fmt_peer(peer.pubkey_hex, name_map)} → {peer.host}:{peer.port}"
+                f"  {fmt_peer(peer.pubkey_hex, name_map)} -> {peer.host}:{peer.port}"
             )
         LOGGER.info("=" * 60)
 
@@ -308,54 +310,49 @@ def main() -> int:
         print("Error: --udp-port is required", file=sys.stderr)
         return 1
 
-    # Default to auto-discovery unless manual --peer is provided
-    auto_discover = len(args.peers) == 0
-
-    # Validate peer args
-    if auto_discover:
-        # Auto-discovery mode: need pubkeys from --peer-pubkey or pubkeys/
-        if args.peer_pubkeys:
-            if not (1 <= len(args.peer_pubkeys) <= 2):
-                print(
-                    "Error: pass 1 or 2 --peer-pubkey values (for the full team you want 2)",
-                    file=sys.stderr,
-                )
-                return 1
-        else:
-            # Try to load from pubkeys/ directory; need local pubkey first
-            try:
-                _local_pk = extract_public_key_hex(args.pem)
-            except Exception as exc:
-                print(f"Error loading public key: {exc}", file=sys.stderr)
-                return 1
-            try:
-                args.peer_pubkeys = load_team_pubkeys(_local_pk)
-                LOGGER.info(
-                    f"Loaded {len(args.peer_pubkeys)} teammate pubkey(s) from pubkeys/"
-                )
-            except RuntimeError as exc:
-                print(
-                    f"Error: {exc}\n"
-                    "Provide teammate keys via --peer-pubkey or place them in pubkeys/.",
-                    file=sys.stderr,
-                )
-                return 1
-    else:
-        # Manual mode: --peer and --peer-pubkey must match
-        if len(args.peers) != len(args.peer_pubkeys):
-            print(
-                f"Error: --peer and --peer-pubkey must have the same count "
-                f"({len(args.peers)} vs {len(args.peer_pubkeys)})",
-                file=sys.stderr,
-            )
-            return 1
-
     # Load local public key
     try:
         local_pubkey = extract_public_key_hex(args.pem)
         LOGGER.info(f"Local public key: {fmt_peer(local_pubkey, name_map)}")
     except Exception as exc:
         print(f"Error loading public key: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        team_config = load_team_config(args.team_config)
+        local_member = team_config.local_member(local_pubkey)
+        LOGGER.info(
+            "Local Lab 2 role: Node %s (%s)", local_member.role, local_member.name
+        )
+    except Exception as exc:
+        print(f"Error loading team config: {exc}", file=sys.stderr)
+        return 1
+
+    # Default to auto-discovery unless manual --peer is provided.
+    auto_discover = len(args.peers) == 0
+    expected_teammates = [
+        member.pubkey_hex for member in team_config.teammates(local_pubkey)
+    ]
+    if args.peer_pubkeys:
+        if not (1 <= len(args.peer_pubkeys) <= 2):
+            print("Error: pass 1 or 2 --peer-pubkey values", file=sys.stderr)
+            return 1
+    else:
+        args.peer_pubkeys = expected_teammates
+
+    if not set(args.peer_pubkeys).issubset(set(expected_teammates)):
+        print(
+            "Error: --peer-pubkey values must be teammates from the team config",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not auto_discover and len(args.peers) != len(args.peer_pubkeys):
+        print(
+            f"Error: --peer and --peer-pubkey must have the same count "
+            f"({len(args.peers)} vs {len(args.peer_pubkeys)})",
+            file=sys.stderr,
+        )
         return 1
 
     # Parse peer endpoints (manual mode only)
@@ -387,6 +384,7 @@ def main() -> int:
                     test_udp=args.test_udp,
                     timeout=timeout,
                     name_map=name_map,
+                    team_config=team_config,
                     auto_discover=auto_discover,
                     teammate_pubkeys=args.peer_pubkeys if auto_discover else None,
                     key_file=args.pem,
