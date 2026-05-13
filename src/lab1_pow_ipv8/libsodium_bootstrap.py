@@ -11,7 +11,6 @@ import zipfile
 from pathlib import Path
 from typing import Iterable
 
-
 LIBSODIUM_WINDOWS_URL = (
     "https://download.libsodium.org/libsodium/releases/"
     "libsodium-1.0.22-stable-msvc.zip"
@@ -208,7 +207,12 @@ def _select_shared_library(search_root: Path) -> Path:
 
 
 def _has_shared_lib_in_dir(path: Path) -> bool:
-    for name in ("libsodium.dylib", "libsodium.so", "libsodium.so.23", "libsodium.so.26"):
+    for name in (
+        "libsodium.dylib",
+        "libsodium.so",
+        "libsodium.so.23",
+        "libsodium.so.26",
+    ):
         if (path / name).exists():
             return True
     return False
@@ -217,6 +221,10 @@ def _has_shared_lib_in_dir(path: Path) -> bool:
 def _prepend_shared_library_paths(path: Path) -> None:
     _prepend_path(path)
     if sys.platform == "darwin":
-        os.environ["DYLD_LIBRARY_PATH"] = f"{path}{os.pathsep}{os.environ.get('DYLD_LIBRARY_PATH', '')}"
+        os.environ["DYLD_LIBRARY_PATH"] = (
+            f"{path}{os.pathsep}{os.environ.get('DYLD_LIBRARY_PATH', '')}"
+        )
     elif os.name == "posix":
-        os.environ["LD_LIBRARY_PATH"] = f"{path}{os.pathsep}{os.environ.get('LD_LIBRARY_PATH', '')}"
+        os.environ["LD_LIBRARY_PATH"] = (
+            f"{path}{os.pathsep}{os.environ.get('LD_LIBRARY_PATH', '')}"
+        )

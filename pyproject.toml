@@ -10,6 +10,8 @@ requires-python = ">=3.10"
 dependencies = [
   "pyipv8 @ git+https://github.com/Tribler/py-ipv8.git",
   "pytest>=8.0.0",
+  "black>=24.0.0",
+  "pre-commit>=3.7.0",
 ]
 
 [project.scripts]
@@ -21,3 +23,8 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+include = "\\.pyi?$"

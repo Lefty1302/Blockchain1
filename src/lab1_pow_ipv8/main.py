@@ -10,7 +10,12 @@ import sys
 from .client import submit_pow
 from .constants import DEFAULT_DIFFICULTY
 from .pow import PowSolution, is_valid_pow, mine_pow
-from .validation import canonicalize_email, validate_email, validate_github_url, validate_nonce
+from .validation import (
+    canonicalize_email,
+    validate_email,
+    validate_github_url,
+    validate_nonce,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -131,7 +136,9 @@ def mine_or_use_nonce(
 def main() -> int:
     args = parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
 
     email = args.email if args.no_canonicalize_email else canonicalize_email(args.email)
     github_url = args.github_url

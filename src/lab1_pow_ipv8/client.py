@@ -15,7 +15,6 @@ from .constants import COMMUNITY_ID_HEX, SERVER_PUBLIC_KEY_HEX
 from .protocol import SubmissionPayload, SubmissionResponsePayload
 from .validation import validate_email, validate_github_url, validate_nonce
 
-
 LOGGER = logging.getLogger("lab1_pow_ipv8")
 
 
@@ -177,7 +176,9 @@ def build_lab_pow_community():
             self._response_event.set()
             self.cancel_pending_task("submit_when_found")
 
-        async def wait_for_response(self, timeout_seconds: float) -> SubmissionResult | None:
+        async def wait_for_response(
+            self, timeout_seconds: float
+        ) -> SubmissionResult | None:
             try:
                 await asyncio.wait_for(
                     self._response_event.wait(), timeout=timeout_seconds
@@ -227,7 +228,9 @@ async def submit_pow(
         [("started",)],
     )
 
-    ipv8 = IPv8(builder.finalize(), extra_communities={"LabPowCommunity": LabPowCommunity})
+    ipv8 = IPv8(
+        builder.finalize(), extra_communities={"LabPowCommunity": LabPowCommunity}
+    )
     await ipv8.start()
 
     try:

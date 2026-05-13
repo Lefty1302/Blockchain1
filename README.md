@@ -39,6 +39,15 @@ uv lock
 uv sync
 ```
 
+### Pre-commit (format on commit)
+
+```powershell
+uv sync
+uv run pre-commit install
+```
+
+Black uses spaces (not tabs) by design.
+
 ## Usage
 
 Run the client from the project root:
