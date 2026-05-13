@@ -70,30 +70,6 @@ def verify_signature(pubkey_hex: str, data: bytes, signature: bytes) -> bool:
         return False
 
 
-def load_team_pubkeys(local_pubkey_hex: str, pubkeys_dir: str = "pubkeys") -> list[str]:
-    """
-    Load teammate public keys from pubkeys/*.txt, excluding the local key.
-
-    Raises RuntimeError if the directory is missing or yields no teammate keys.
-    """
-    if not os.path.isdir(pubkeys_dir):
-        raise RuntimeError(
-            f"pubkeys/ directory not found. Pass --peer-pubkey or create {pubkeys_dir}/."
-        )
-    pubkeys = []
-    for path in glob.glob(os.path.join(pubkeys_dir, "*.txt")):
-        with open(path) as f:
-            content = f.read().strip()
-        if content and content != local_pubkey_hex:
-            pubkeys.append(content)
-    if not pubkeys:
-        raise RuntimeError(
-            f"No teammate pubkeys found in {pubkeys_dir}/. "
-            "Pass --peer-pubkey or add teammates' .txt files."
-        )
-    return pubkeys
-
-
 def load_pubkey_name_map(pubkeys_dir: str = "pubkeys") -> dict[str, str]:
     """Return {pubkey_hex: name} built from the stem of each pubkeys/*.txt filename."""
     result: dict[str, str] = {}

@@ -23,9 +23,7 @@ from .udp_prep import (
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Lab 2: Coordinated Group Signing Prep Phase"
-    )
+    parser = argparse.ArgumentParser(description="Lab 2: UDP discovery test")
     parser.add_argument(
         "--print-pubkey",
         action="store_true",
@@ -52,7 +50,7 @@ def parse_args() -> argparse.Namespace:
         action="append",
         dest="peer_pubkeys",
         default=[],
-        help="Public key hex of a teammate (can be repeated, 2 required for the other team members)",
+        help="Public key hex of a teammate from the team config; can be repeated",
     )
     parser.add_argument(
         "--peer",
@@ -269,11 +267,11 @@ async def run_udp_test(
     for peer in peers:
         got_response = await server.wait_for_pong(peer.pubkey_hex, timeout=timeout)
         if got_response:
-            LOGGER.info(f"✓ {fmt_peer(peer.pubkey_hex, name_map)} responded")
+            LOGGER.info(f"OK {fmt_peer(peer.pubkey_hex, name_map)} responded")
             responses.append(True)
         else:
             LOGGER.warning(
-                f"✗ {fmt_peer(peer.pubkey_hex, name_map)} no response (timeout {timeout}s)"
+                f"FAIL {fmt_peer(peer.pubkey_hex, name_map)} no response (timeout {timeout}s)"
             )
             responses.append(False)
 
