@@ -201,15 +201,20 @@ def build_lab2_discovery_community():
             target_pubkeys_set = set(target_pubkeys)
             announced_to: set[bytes] = set()
             last_request_sent: dict[bytes, float] = {}
+            last_status_log = 0.0
 
             while asyncio.get_event_loop().time() - start_time < timeout:
+                now = asyncio.get_event_loop().time()
+                if now - last_status_log >= 5.0:
+                    self._log_discovery_status(target_pubkeys_set)
+                    last_status_log = now
+
                 # Check if we have all endpoints
                 found_all = all(pk in self.peer_endpoints for pk in target_pubkeys)
                 if found_all:
                     return {pk: self.peer_endpoints[pk] for pk in target_pubkeys}
 
                 # Send our endpoint and request theirs once IPv8 has found a target peer.
-                now = asyncio.get_event_loop().time()
                 for peer in self.get_peers():
                     peer_pubkey = peer.public_key.key_to_bin()
                     if peer_pubkey not in target_pubkeys_set:
@@ -244,5 +249,20 @@ def build_lab2_discovery_community():
                 for pk in target_pubkeys
                 if pk in self.peer_endpoints
             }
+
+        def _log_discovery_status(self, target_pubkeys: set[bytes]) -> None:
+            peers = self.get_peers()
+            matching_peers = [
+                peer for peer in peers if peer.public_key.key_to_bin() in target_pubkeys
+            ]
+            walkable_count = len(self.get_walkable_addresses())
+            LOGGER.info(
+                "IPv8 discovery status: peers=%d, matching=%d, walkable=%d, "
+                "endpoints=%d",
+                len(peers),
+                len(matching_peers),
+                walkable_count,
+                len(self.peer_endpoints),
+            )
 
     return Lab2DiscoveryCommunity

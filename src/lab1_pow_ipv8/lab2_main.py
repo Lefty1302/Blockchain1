@@ -75,6 +75,20 @@ def parse_args() -> argparse.Namespace:
         help="Seconds to wait for IPv8 peer discovery in auto mode (default: 60)",
     )
     parser.add_argument(
+        "--ipv8-port",
+        type=int,
+        default=8090,
+        help=(
+            "Local UDP port for IPv8 peer discovery "
+            "(default: 8090; this is separate from --udp-port)"
+        ),
+    )
+    parser.add_argument(
+        "--lan-discovery",
+        action="store_true",
+        help="Also use IPv8 UDP broadcast discovery on the local network",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Enable debug logging",
@@ -131,6 +145,8 @@ async def run_prep_phase(
     teammate_pubkeys: list[str] | None = None,
     key_file: str = "lab1_identity.pem",
     discovery_timeout: float = 60.0,
+    ipv8_port: int = 8090,
+    lan_discovery: bool = False,
 ) -> int:
     """
     Run the prep phase:
@@ -153,6 +169,8 @@ async def run_prep_phase(
             from .libsodium_bootstrap import ensure_libsodium
             from .lab2_discovery import build_lab2_discovery_community
             from ipv8.configuration import (
+                Bootstrapper,
+                BootstrapperDefinition,
                 ConfigBuilder,
                 Strategy,
                 WalkerDefinition,
@@ -165,12 +183,21 @@ async def run_prep_phase(
 
             Lab2DiscoveryCommunity = build_lab2_discovery_community()
             builder = ConfigBuilder().clear_keys().clear_overlays()
+            builder.set_port(ipv8_port)
             builder.add_key("lab2", "curve25519", key_file)
+            bootstrappers = list(default_bootstrap_defs)
+            if lan_discovery:
+                bootstrappers.append(
+                    BootstrapperDefinition(
+                        Bootstrapper.UDPBroadcastBootstrapper,
+                        {"bootstrap_timeout": 30.0},
+                    )
+                )
             builder.add_overlay(
                 "Lab2DiscoveryCommunity",
                 "lab2",
                 [WalkerDefinition(Strategy.RandomWalk, 30, {"timeout": 3.0})],
-                default_bootstrap_defs,
+                bootstrappers,
                 {},
                 [("started",)],
             )
@@ -180,6 +207,10 @@ async def run_prep_phase(
                 extra_communities={"Lab2DiscoveryCommunity": Lab2DiscoveryCommunity},
             )
             await ipv8.start()
+            LOGGER.info(
+                "IPv8 discovery endpoint bound to %s",
+                ipv8.endpoint.get_address("UDPIPv4"),
+            )
 
             try:
                 overlay = next(
@@ -389,6 +420,8 @@ def main() -> int:
                 teammate_pubkeys=args.peer_pubkeys if auto_discover else None,
                 key_file=args.pem,
                 discovery_timeout=args.discovery_timeout,
+                ipv8_port=args.ipv8_port,
+                lan_discovery=args.lan_discovery,
             )
         )
     except KeyboardInterrupt:

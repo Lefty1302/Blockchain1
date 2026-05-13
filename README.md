@@ -133,6 +133,8 @@ uv run lab2-prep \
 - `--peer <host:port>` – (Optional) Bypass IPv8 discovery and manually specify endpoint (repeatable)
 - `--test-udp` – Run UDP connectivity test (ping/pong)
 - `--discovery-timeout <seconds>` – Seconds to wait for IPv8 peer discovery in auto mode (default: 60)
+- `--ipv8-port <port>` – Local UDP port for IPv8 peer discovery (default: 8090; separate from `--udp-port`)
+- `--lan-discovery` – Also use IPv8 UDP broadcast discovery on the local network
 - `--debug` – Enable debug logging
 
 ### How it works
@@ -169,7 +171,8 @@ uv run lab2-prep \
 - Check all three nodes are running
 - For two-person testing, pass the single teammate key once; do not duplicate it.
 - If auto-detected UDP host is wrong, pass `--udp-host <your-lan-ip>`.
-- Verify firewall allows UDP on the specified ports
+- Verify firewall allows UDP on the prep port (`--udp-port`) and IPv8 discovery port (`--ipv8-port`, default `8090`).
+- If both machines are on the same LAN and public IPv8 bootstrap stays at 0 peers, try `--lan-discovery`.
 - Confirm `--peer` addresses match where teammates are actually listening
 - If using different machines, ensure they can reach each other (try `ping` first)
 
