@@ -89,11 +89,13 @@ Lab 2 requires fast UDP coordination between three teammates. The **prep phase**
 
 ### Quick Start
 
-**Step 1: Extract your public key** (share with teammates via WhatsApp)
+**Step 1: Extract your public key** 
 
 ```powershell
 uv run lab2-prep --print-pubkey --pem lab1_identity.pem
 ```
+
+Then make a new *.txt file in ./pubkeys with your public key
 
 **Step 2: Run prep with all three team members**
 
@@ -169,5 +171,3 @@ uv run lab2-prep \
 - Confirm `--peer` addresses match where teammates are actually listening
 - If using different machines, ensure they can reach each other (try `ping` first)
 
----
-Hello!
