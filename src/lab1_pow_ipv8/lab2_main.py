@@ -136,7 +136,7 @@ async def run_prep_phase(
                 f"Waiting for {len(teammate_pubkeys_bin)} teammate(s) to announce endpoints..."
             )
             discovered_endpoints = await overlay.wait_for_endpoints(
-                teammate_pubkeys_bin, timeout=10.0
+                teammate_pubkeys_bin, timeout=300.0
             )
 
             if len(discovered_endpoints) < len(teammate_pubkeys_bin):
@@ -155,7 +155,7 @@ async def run_prep_phase(
                     LOGGER.info(f"Discovered {pubkey_hex[:16]}... @ {host}:{port}")
                 else:
                     LOGGER.error(
-                        f"Failed to discover endpoint for {pubkey_hex[:16]}..."
+                        f"Failed to discover endpoint for ...{pubkey_hex[-16:]}"
                     )
                     return 1
 
@@ -242,6 +242,7 @@ def main() -> int:
         level=logging.DEBUG if args.debug else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
+    logging.getLogger("ipv8.community").setLevel(logging.CRITICAL)
     globals()["LOGGER"] = logging.getLogger("lab2_prep")
 
     # Handle --print-pubkey

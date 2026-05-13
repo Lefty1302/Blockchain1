@@ -139,6 +139,7 @@ def main() -> int:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
+    logging.getLogger("ipv8.community").setLevel(logging.CRITICAL)
 
     email = args.email if args.no_canonicalize_email else canonicalize_email(args.email)
     github_url = args.github_url

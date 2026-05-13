@@ -137,7 +137,7 @@ def build_lab2_discovery_community():
 
             self.peer_endpoints[peer_pubkey] = (host, port)
             LOGGER.info(
-                f"Discovered endpoint: {peer_pubkey.hex()[:16]}... @ {host}:{port}"
+                f"Discovered endpoint: ...{peer_pubkey.hex()[-16:]} @ {host}:{port}"
             )
             self.endpoint_event.set()
 
