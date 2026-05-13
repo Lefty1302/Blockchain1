@@ -14,11 +14,13 @@ from ipv8.community import Community, CommunitySettings
 from ipv8.lazy_community import PacketDecodingError, lazy_wrapper
 from ipv8.messaging.lazy_payload import VariablePayload, vp_compile
 from ipv8.messaging.payload_headers import BinMemberAuthenticationPayload
+from ipv8.messaging.serialization import PackError
 from ipv8.peer import Peer
 
 from lab1_pow_ipv8.constants import LAB2_COMMUNITY_ID_HEX, LAB2_SERVER_PUBLIC_KEY_HEX
 from .ids import (
     ENDPOINT_ANNOUNCEMENT,
+    ENDPOINT_GOSSIP,
     ENDPOINT_REQUEST,
     SERVER_CHALLENGE_REQUEST,
     SERVER_CHALLENGE_RESPONSE,
@@ -125,6 +127,15 @@ class EndpointRequestPayload(VariablePayload):
     names: list[str] = []
 
 
+@vp_compile
+class EndpointGossipPayload(VariablePayload):
+    """Tell a teammate about another teammate's endpoint."""
+
+    msg_id = ENDPOINT_GOSSIP
+    format_list = ["varlenH", "varlenHutf8", "H"]
+    names = ["target_pubkey", "host", "port"]
+
+
 def build_lab2_community():
     """Build the combined Lab 2 IPv8 community."""
 
@@ -143,6 +154,7 @@ def build_lab2_community():
                 EndpointAnnouncementPayload, self.on_endpoint_announcement
             )
             self.add_message_handler(EndpointRequestPayload, self.on_endpoint_request)
+            self.add_message_handler(EndpointGossipPayload, self.on_endpoint_gossip)
             self._unsupported_curve_packets_seen: set[tuple[str, int, str]] = set()
             self._wrap_handlers_to_ignore_unsupported_curves()
 
@@ -184,7 +196,7 @@ def build_lab2_community():
                             asyncio.ensure_future(result),
                             ignore=(Exception,),
                         )
-                except PacketDecodingError as exc:
+                except (PacketDecodingError, PackError) as exc:
                     self.logger.debug("Dropping invalid Lab 2 packet: %s", exc)
                 except Exception:
                     self.logger.exception("Exception occurred while handling packet!")
@@ -269,7 +281,6 @@ def build_lab2_community():
                 if self.target_pubkeys and self.target_pubkeys.issubset(
                     self.peer_endpoints
                 ):
-                    self.cancel_pending_task("announce_to_team")
                     return
                 host, port = self.local_endpoint
                 host_port_str = f"{host}:{port}"
@@ -409,6 +420,7 @@ def build_lab2_community():
                 if ":" in host_port_str
                 else host_port_str
             )
+            is_new = peer_pubkey not in self.peer_endpoints
             self.peer_endpoints[peer_pubkey] = (host, port)
             LOGGER.info(
                 "Discovered endpoint: ...%s @ %s:%s",
@@ -417,6 +429,8 @@ def build_lab2_community():
                 port,
             )
             self.endpoint_event.set()
+            if is_new:
+                self._gossip_known_endpoints(peer_pubkey)
 
         @lazy_wrapper(EndpointRequestPayload)
         def on_endpoint_request(
@@ -427,6 +441,109 @@ def build_lab2_community():
                 return
             host, port = self.local_endpoint
             self.ez_send(peer, EndpointAnnouncementPayload(f"{host}:{port}", port))
+
+        def _peer_for_pubkey(self, pubkey_bin: bytes) -> Peer | None:
+            for p in self.get_peers():
+                if p.public_key.key_to_bin() == pubkey_bin:
+                    return p
+            return None
+
+        def _gossip_known_endpoints(self, newly_learned_pubkey: bytes) -> None:
+            if newly_learned_pubkey not in self.peer_endpoints:
+                return
+            new_host, new_port = self.peer_endpoints[newly_learned_pubkey]
+            for other_pubkey, (other_host, other_port) in list(
+                self.peer_endpoints.items()
+            ):
+                if other_pubkey == newly_learned_pubkey:
+                    continue
+                # Tell the other peer about the newcomer
+                other_peer = self._peer_for_pubkey(other_pubkey)
+                if other_peer is not None:
+                    try:
+                        self.ez_send(
+                            other_peer,
+                            EndpointGossipPayload(
+                                newly_learned_pubkey, new_host, new_port
+                            ),
+                        )
+                        LOGGER.debug(
+                            "Gossip: told ...%s about ...%s @ %s:%d",
+                            other_pubkey.hex()[-8:],
+                            newly_learned_pubkey.hex()[-8:],
+                            new_host,
+                            new_port,
+                        )
+                    except Exception as exc:
+                        LOGGER.debug("Gossip send failed: %s", exc)
+                # Tell the newcomer about this other peer
+                new_peer = self._peer_for_pubkey(newly_learned_pubkey)
+                if new_peer is not None:
+                    try:
+                        self.ez_send(
+                            new_peer,
+                            EndpointGossipPayload(
+                                other_pubkey, other_host, other_port
+                            ),
+                        )
+                        LOGGER.debug(
+                            "Gossip: told ...%s about ...%s @ %s:%d",
+                            newly_learned_pubkey.hex()[-8:],
+                            other_pubkey.hex()[-8:],
+                            other_host,
+                            other_port,
+                        )
+                    except Exception as exc:
+                        LOGGER.debug("Gossip send failed: %s", exc)
+
+        @lazy_wrapper(EndpointGossipPayload)
+        def on_endpoint_gossip(
+            self, peer: Peer, payload: EndpointGossipPayload
+        ) -> None:
+            sender_pk = peer.public_key.key_to_bin()
+            if self.target_pubkeys and sender_pk not in self.target_pubkeys:
+                return
+            target_pk = bytes(payload.target_pubkey)
+            if self.target_pubkeys and target_pk not in self.target_pubkeys:
+                return
+            if target_pk in self.peer_endpoints:
+                return
+            host = str(payload.host)
+            if ":" in host:
+                host, _ = host.rsplit(":", 1)
+            port = int(payload.port)
+            LOGGER.info(
+                "Gossip received: ...%s -> ...%s @ %s:%d (walking)",
+                sender_pk.hex()[-8:],
+                target_pk.hex()[-8:],
+                host,
+                port,
+            )
+            try:
+                self.walk_to((host, port))
+            except Exception as exc:
+                LOGGER.debug("walk_to from gossip failed: %s", exc)
+
+        def introduction_response_callback(self, peer, dist, payload) -> None:  # type: ignore[override]
+            super().introduction_response_callback(peer, dist, payload)
+            pk = peer.public_key.key_to_bin()
+            if not self.target_pubkeys or pk not in self.target_pubkeys:
+                return
+            if pk in self.peer_endpoints:
+                return
+            try:
+                self.ez_send(peer, EndpointRequestPayload())
+            except Exception as exc:
+                LOGGER.debug("Immediate endpoint request failed: %s", exc)
+            if self.local_endpoint:
+                host, port = self.local_endpoint
+                try:
+                    self.ez_send(
+                        peer,
+                        EndpointAnnouncementPayload(f"{host}:{port}", port),
+                    )
+                except Exception as exc:
+                    LOGGER.debug("Immediate endpoint announce failed: %s", exc)
 
         async def wait_for_endpoints(
             self,
