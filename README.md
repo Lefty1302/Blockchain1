@@ -86,3 +86,6 @@ uv run lab1 --email vmitev@tudelft.nl --github-url https://github.com/vesk4000/B
   - Install via your OS package manager (e.g. `brew install libsodium`, `apt install libsodium`)
   - Or set `LIBSODIUM_URL` to a direct archive URL that contains a prebuilt `libsodium.dylib` or `libsodium.so`.
 - You can always point to an existing local folder with the library via `LIBSODIUM_DIR`.
+
+---
+Hello!
