@@ -232,7 +232,7 @@ async def ensure_udp_connectivity(
         for key in responded:
             peer = pending.pop(key, None)
             if peer:
-                LOGGER.info("✓ %s responded", peer.pubkey_hex[:16] + "...")
+                LOGGER.info("OK %s responded", peer.pubkey_hex[:16] + "...")
 
         if pending:
             waiting = ", ".join([k[:16] + "..." for k in pending.keys()])
@@ -268,39 +268,3 @@ async def announce_endpoint(
             LOGGER.info(f"Announced endpoint to {peer}")
         except Exception as exc:
             LOGGER.warning(f"Failed to announce endpoint to {peer}: {exc}")
-
-
-def compute_canonical_order(pubkeys: list[str]) -> list[str]:
-    """
-    Sort public keys lexicographically (bytewise).
-
-    Returns the canonical order: [pubkey1, pubkey2, pubkey3].
-    This order is used to determine submitter assignment per round.
-    """
-    # Convert hex to bytes for bytewise comparison, or use string as-is if not valid hex
-    pubkey_bytes = []
-    for pk in pubkeys:
-        try:
-            pubkey_bytes.append((pk, bytes.fromhex(pk)))
-        except ValueError:
-            # Not valid hex; treat as ASCII string for comparison
-            pubkey_bytes.append((pk, pk.encode("utf-8")))
-
-    pubkey_bytes.sort(key=lambda x: x[1])
-    return [pk for pk, _ in pubkey_bytes]
-
-
-def get_submitter_for_round(
-    canonical_order: list[str],
-    round_number: int,  # 1, 2, or 3
-) -> str:
-    """
-    Get the designated submitter's public key for a given round.
-
-    Round 1 -> canonical_order[0]
-    Round 2 -> canonical_order[1]
-    Round 3 -> canonical_order[2]
-    """
-    if round_number < 1 or round_number > 3:
-        raise ValueError(f"round_number must be 1-3, got {round_number}")
-    return canonical_order[round_number - 1]

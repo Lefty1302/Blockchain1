@@ -6,7 +6,7 @@ import glob
 import os
 import sys
 
-from .libsodium_bootstrap import ensure_libsodium
+from lab1_pow_ipv8.libsodium_bootstrap import ensure_libsodium
 
 
 def extract_public_key_hex(pem_path: str) -> str:
@@ -32,28 +32,42 @@ def extract_public_key_hex(pem_path: str) -> str:
         ) from exc
 
 
-def load_team_pubkeys(local_pubkey_hex: str, pubkeys_dir: str = "pubkeys") -> list[str]:
-    """
-    Load teammate public keys from pubkeys/*.txt, excluding the local key.
+def load_private_key(pem_path: str):
+    """Load an IPv8 private key from a PEM file."""
+    ensure_libsodium()
 
-    Raises RuntimeError if the directory is missing or yields no teammate keys.
-    """
-    if not os.path.isdir(pubkeys_dir):
-        raise RuntimeError(
-            f"pubkeys/ directory not found. Pass --peer-pubkey or create {pubkeys_dir}/."
-        )
-    pubkeys = []
-    for path in glob.glob(os.path.join(pubkeys_dir, "*.txt")):
-        with open(path) as f:
-            content = f.read().strip()
-        if content and content != local_pubkey_hex:
-            pubkeys.append(content)
-    if not pubkeys:
-        raise RuntimeError(
-            f"No teammate pubkeys found in {pubkeys_dir}/. "
-            "Pass --peer-pubkey or add teammates' .txt files."
-        )
-    return pubkeys
+    from ipv8.keyvault.crypto import default_eccrypto
+
+    try:
+        with open(pem_path, "rb") as f:
+            pem_data = f.read()
+        return default_eccrypto.key_from_private_bin(pem_data)
+    except Exception as exc:
+        raise ValueError(
+            f"Failed to load private key from '{pem_path}': {exc}"
+        ) from exc
+
+
+def sign_bytes(private_key, data: bytes) -> bytes:
+    """Sign raw bytes with an IPv8 private key."""
+    ensure_libsodium()
+
+    from ipv8.keyvault.crypto import default_eccrypto
+
+    return default_eccrypto.create_signature(private_key, data)
+
+
+def verify_signature(pubkey_hex: str, data: bytes, signature: bytes) -> bool:
+    """Verify a signature against an IPv8 public key."""
+    ensure_libsodium()
+
+    from ipv8.keyvault.crypto import default_eccrypto
+
+    try:
+        public_key = default_eccrypto.key_from_public_bin(bytes.fromhex(pubkey_hex))
+        return bool(default_eccrypto.is_valid_signature(public_key, data, signature))
+    except Exception:
+        return False
 
 
 def load_pubkey_name_map(pubkeys_dir: str = "pubkeys") -> dict[str, str]:

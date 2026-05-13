@@ -83,8 +83,8 @@ def _has_libsodium_available() -> bool:
 
 
 _SYSTEM_LIB_SEARCH_DIRS: tuple[str, ...] = (
-    "/opt/homebrew/lib",   # Apple Silicon Homebrew
-    "/usr/local/lib",      # Intel Homebrew / manual installs
+    "/opt/homebrew/lib",  # Apple Silicon Homebrew
+    "/usr/local/lib",  # Intel Homebrew / manual installs
     "/usr/lib",
     "/usr/lib/x86_64-linux-gnu",
     "/usr/lib/aarch64-linux-gnu",
