@@ -60,7 +60,7 @@ class RaceSettings:
     signature_retry_interval: float = 0.25
     baton_timeout: float = 2.0
     round_timeout: float = 10.0
-    walk_peers: int = 30
+    walk_peers: int = 200
     walk_timeout: float = 3.0
 
 

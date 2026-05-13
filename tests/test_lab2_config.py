@@ -6,6 +6,7 @@ from lab2_relay_race.ids import (
     CUSTOM_MESSAGE_IDS,
     SERVER_MESSAGE_IDS,
     ENDPOINT_ANNOUNCEMENT,
+    ENDPOINT_GOSSIP,
     ENDPOINT_REQUEST,
     UDP_ACK,
     UDP_BATON_PASS,
@@ -23,6 +24,7 @@ def test_lab2_message_ids_do_not_conflict():
     assert {
         ENDPOINT_ANNOUNCEMENT,
         ENDPOINT_REQUEST,
+        ENDPOINT_GOSSIP,
         UDP_GROUP_READY,
         UDP_NONCE_BROADCAST,
         UDP_SIGNATURE_REPLY,

@@ -158,7 +158,7 @@ async def run_prep_phase(
         builder.add_overlay(
             "Lab2Community",
             "lab2",
-            [WalkerDefinition(Strategy.RandomWalk, 30, {"timeout": 3.0})],
+            [WalkerDefinition(Strategy.RandomWalk, 200, {"timeout": 3.0})],
             default_bootstrap_defs,
             {},
             [("started",)],
