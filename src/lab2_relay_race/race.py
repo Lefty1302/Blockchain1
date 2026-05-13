@@ -7,6 +7,10 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from lab1_pow_ipv8.libsodium_bootstrap import ensure_libsodium
+
+ensure_libsodium()
+
 from ipv8.configuration import (
     ConfigBuilder,
     Strategy,
@@ -15,7 +19,6 @@ from ipv8.configuration import (
 )
 from ipv8_service import IPv8
 
-from lab1_pow_ipv8.libsodium_bootstrap import ensure_libsodium
 from .community import Challenge, RoundResult, build_lab2_community
 from .ids import (
     UDP_ACK,
