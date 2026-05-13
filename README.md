@@ -183,6 +183,7 @@ uv run lab2-prep \
 
 **Lab 2 prep UDP connectivity issues:**
 - Check all three nodes are running
+- For two-person testing, pass the single teammate key once; do not duplicate it.
 - Verify firewall allows UDP on the specified ports
 - Confirm `--peer` addresses match where teammates are actually listening
 - If using different machines, ensure they can reach each other (try `ping` first)

@@ -50,7 +50,10 @@ def parse_args() -> argparse.Namespace:
         action="append",
         dest="peer_pubkeys",
         default=[],
-        help="Public key hex of a teammate from the team config; can be repeated",
+        help=(
+            "Public key hex of a teammate from the team config; "
+            "1 allowed for two-person testing, 2 for the full group"
+        ),
     )
     parser.add_argument(
         "--peer",
@@ -77,6 +80,33 @@ def parse_args() -> argparse.Namespace:
         help="Seconds to timeout after (default is 300s = 5 min)",
     )
     return parser.parse_args()
+
+
+def validate_peer_args(
+    auto_discover: bool,
+    peers: list[str],
+    peer_pubkeys: list[str],
+) -> str | None:
+    """Return an error message if peer CLI arguments are inconsistent."""
+    if auto_discover:
+        if not peer_pubkeys or len(peer_pubkeys) not in (1, 2):
+            return (
+                "Error: provide 1 --peer-pubkey for two-person testing, "
+                "or 2 --peer-pubkey values for the full group"
+            )
+    elif len(peers) != len(peer_pubkeys):
+        return (
+            "Error: --peer and --peer-pubkey must have the same count "
+            f"({len(peers)} vs {len(peer_pubkeys)})"
+        )
+
+    if len(set(peer_pubkeys)) != len(peer_pubkeys):
+        return (
+            "Error: duplicate --peer-pubkey values are not useful; pass each "
+            "teammate key once"
+        )
+
+    return None
 
 
 async def run_prep_phase(
@@ -338,17 +368,18 @@ def main() -> int:
     else:
         args.peer_pubkeys = expected_teammates
 
+    peer_arg_error = validate_peer_args(
+        auto_discover,
+        args.peers,
+        args.peer_pubkeys,
+    )
+    if peer_arg_error is not None:
+        print(peer_arg_error, file=sys.stderr)
+        return 1
+
     if not set(args.peer_pubkeys).issubset(set(expected_teammates)):
         print(
             "Error: --peer-pubkey values must be teammates from the team config",
-            file=sys.stderr,
-        )
-        return 1
-
-    if not auto_discover and len(args.peers) != len(args.peer_pubkeys):
-        print(
-            f"Error: --peer and --peer-pubkey must have the same count "
-            f"({len(args.peers)} vs {len(args.peer_pubkeys)})",
             file=sys.stderr,
         )
         return 1
