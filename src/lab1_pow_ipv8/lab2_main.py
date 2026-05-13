@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import socket
 import sys
 
 from .lab2_keyutil import extract_public_key_hex
@@ -36,6 +37,14 @@ def parse_args() -> argparse.Namespace:
         type=int,
         required=False,
         help="Local UDP port for team communication",
+    )
+    parser.add_argument(
+        "--udp-host",
+        default=None,
+        help=(
+            "Host/IP to advertise for UDP coordination "
+            "(default: auto-detect a local LAN IPv4 address)"
+        ),
     )
     parser.add_argument(
         "--peer-pubkey",
@@ -94,8 +103,21 @@ def validate_peer_args(
     return None
 
 
+def detect_udp_host() -> str:
+    """Best-effort local IPv4 address to advertise to teammates."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            host = sock.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+    return host or "127.0.0.1"
+
+
 async def run_prep_phase(
     local_pubkey: str,
+    local_host: str,
     local_port: int,
     peers: list[PeerEndpoint],
     test_udp: bool,
@@ -105,97 +127,107 @@ async def run_prep_phase(
 ) -> int:
     """
     Run the prep phase:
-    1. If auto_discover: use IPv8 to discover teammate endpoints, then start UDP listener.
-    2. Otherwise: start UDP listener directly.
+    1. Start the UDP listener so peers can ping us whenever they are ready.
+    2. If auto_discover: use IPv8 to discover teammate UDP endpoints.
     3. Announce endpoint to peers.
     4. Optionally run UDP connectivity test.
     5. Report canonical order and peer map.
     """
-    if auto_discover:
-        if not teammate_pubkeys:
-            LOGGER.error("--auto-discover requires --peer-pubkey arguments")
-            return 1
-
-        # Use IPv8 discovery to get teammate endpoints
-        from .libsodium_bootstrap import ensure_libsodium
-        from .lab2_discovery import build_lab2_discovery_community
-        from ipv8.configuration import (
-            ConfigBuilder,
-            Strategy,
-            WalkerDefinition,
-            default_bootstrap_defs,
-        )
-        from ipv8_service import IPv8
-
-        ensure_libsodium()
-        LOGGER.info("Starting IPv8 discovery for teammate endpoints...")
-
-        Lab2DiscoveryCommunity = build_lab2_discovery_community()
-        builder = ConfigBuilder().clear_keys().clear_overlays()
-        builder.add_key("lab2", "curve25519", key_file)
-        builder.add_overlay(
-            "Lab2DiscoveryCommunity",
-            "lab2",
-            [WalkerDefinition(Strategy.RandomWalk, 30, {"timeout": 3.0})],
-            default_bootstrap_defs,
-            {},
-            [("started",)],
-        )
-
-        ipv8 = IPv8(
-            builder.finalize(),
-            extra_communities={"Lab2DiscoveryCommunity": Lab2DiscoveryCommunity},
-        )
-        await ipv8.start()
-
-        try:
-            overlay = next(
-                o for o in ipv8.overlays if isinstance(o, Lab2DiscoveryCommunity)
-            )
-            overlay.set_local_endpoint("127.0.0.1", local_port)  # TODO: use external IP
-
-            # Convert teammate pubkey strings to bytes
-            teammate_pubkeys_bin = [bytes.fromhex(pk) for pk in teammate_pubkeys]
-
-            # Request endpoints from teammates
-            LOGGER.info(
-                f"Waiting for {len(teammate_pubkeys_bin)} teammate(s) to announce endpoints..."
-            )
-            discovered_endpoints = await overlay.wait_for_endpoints(
-                teammate_pubkeys_bin, timeout=10.0
-            )
-
-            if len(discovered_endpoints) < len(teammate_pubkeys_bin):
-                missing = len(teammate_pubkeys_bin) - len(discovered_endpoints)
-                LOGGER.warning(
-                    f"Only discovered {len(discovered_endpoints)}/{len(teammate_pubkeys_bin)} endpoints"
-                )
-
-            # Convert discovered endpoints to PeerEndpoint objects
-            peers = []
-            for pubkey_hex in teammate_pubkeys:
-                pubkey_bin = bytes.fromhex(pubkey_hex)
-                if pubkey_bin in discovered_endpoints:
-                    host, port = discovered_endpoints[pubkey_bin]
-                    peers.append(PeerEndpoint(pubkey_hex, host, port))
-                    LOGGER.info(f"Discovered {pubkey_hex[:16]}... @ {host}:{port}")
-                else:
-                    LOGGER.error(
-                        f"Failed to discover endpoint for {pubkey_hex[:16]}..."
-                    )
-                    return 1
-
-        finally:
-            await ipv8.stop()
-
     server = UdpPrepServer(local_port, local_pubkey)
     await server.start()
 
     try:
+        if auto_discover:
+            if not teammate_pubkeys:
+                LOGGER.error("--auto-discover requires --peer-pubkey arguments")
+                return 1
+
+            # Use IPv8 discovery to get teammate endpoints
+            from .libsodium_bootstrap import ensure_libsodium
+            from .lab2_discovery import build_lab2_discovery_community
+            from ipv8.configuration import (
+                ConfigBuilder,
+                Strategy,
+                WalkerDefinition,
+                default_bootstrap_defs,
+            )
+            from ipv8_service import IPv8
+
+            ensure_libsodium()
+            LOGGER.info("Starting IPv8 discovery for teammate endpoints...")
+
+            Lab2DiscoveryCommunity = build_lab2_discovery_community()
+            builder = ConfigBuilder().clear_keys().clear_overlays()
+            builder.add_key("lab2", "curve25519", key_file)
+            builder.add_overlay(
+                "Lab2DiscoveryCommunity",
+                "lab2",
+                [WalkerDefinition(Strategy.RandomWalk, 30, {"timeout": 3.0})],
+                default_bootstrap_defs,
+                {},
+                [("started",)],
+            )
+
+            ipv8 = IPv8(
+                builder.finalize(),
+                extra_communities={"Lab2DiscoveryCommunity": Lab2DiscoveryCommunity},
+            )
+            await ipv8.start()
+
+            try:
+                overlay = next(
+                    o for o in ipv8.overlays if isinstance(o, Lab2DiscoveryCommunity)
+                )
+                overlay.set_local_endpoint(local_host, local_port)
+
+                # Convert teammate pubkey strings to bytes
+                teammate_pubkeys_bin = [bytes.fromhex(pk) for pk in teammate_pubkeys]
+
+                # Request endpoints from teammates
+                LOGGER.info(
+                    f"Waiting for {len(teammate_pubkeys_bin)} teammate(s) to announce endpoints..."
+                )
+                discovered_endpoints = await overlay.wait_for_endpoints(
+                    teammate_pubkeys_bin, timeout=10.0
+                )
+
+                if len(discovered_endpoints) < len(teammate_pubkeys_bin):
+                    LOGGER.warning(
+                        f"Only discovered {len(discovered_endpoints)}/{len(teammate_pubkeys_bin)} endpoints"
+                    )
+
+                # Convert discovered endpoints to PeerEndpoint objects
+                peers = []
+                missing_pubkeys = []
+                for pubkey_hex in teammate_pubkeys:
+                    pubkey_bin = bytes.fromhex(pubkey_hex)
+                    if pubkey_bin in discovered_endpoints:
+                        host, port = discovered_endpoints[pubkey_bin]
+                        peers.append(PeerEndpoint(pubkey_hex, host, port))
+                        LOGGER.info(f"Discovered {pubkey_hex[:16]}... @ {host}:{port}")
+                    else:
+                        missing_pubkeys.append(pubkey_hex)
+
+                for pubkey_hex in missing_pubkeys:
+                    LOGGER.warning(
+                        "Failed to discover endpoint for %s...; skipping UDP packets "
+                        "to that peer",
+                        pubkey_hex[:16],
+                    )
+
+                if not peers:
+                    LOGGER.error(
+                        "No peer endpoints discovered; cannot send UDP packets"
+                    )
+                    return 1
+
+            finally:
+                await ipv8.stop()
+
         # Announce our endpoint to all known peers
         LOGGER.info(f"Announcing endpoint to {len(peers)} peer(s)")
         await announce_endpoint(
-            "127.0.0.1",  # For local testing; use external IP in production
+            local_host,
             local_port,
             peers,
             local_pubkey,
@@ -334,11 +366,15 @@ def main() -> int:
                 print(f"Error: invalid port '{port_str}'", file=sys.stderr)
                 return 1
 
+    local_host = args.udp_host or detect_udp_host()
+    LOGGER.info(f"Advertising UDP endpoint as {local_host}:{args.udp_port}")
+
     # Run prep phase
     try:
         return asyncio.run(
             run_prep_phase(
                 local_pubkey,
+                local_host,
                 args.udp_port,
                 peers,
                 test_udp=args.test_udp,

@@ -128,6 +128,7 @@ uv run lab2-prep \
 - `--print-pubkey` – Extract pubkey from PEM, print & exit
 - `--pem <path>` – PEM file (default: `lab1_identity.pem`)
 - `--udp-port <int>` – Local UDP port (required)
+- `--udp-host <host>` – UDP host/IP to advertise (default: auto-detect local LAN IPv4; use `127.0.0.1` for same-machine testing)
 - `--peer-pubkey <hex>` – Teammate pubkey hex (repeatable, use 1 for two-person testing or 2 for the full group)
 - `--peer <host:port>` – (Optional) Bypass IPv8 discovery and manually specify endpoint (repeatable)
 - `--test-udp` – Run UDP connectivity test (ping/pong)
@@ -137,11 +138,11 @@ uv run lab2-prep \
 
 **Default mode (IPv8 auto-discovery):**
 1. Extracts your Ed25519 public key from Lab 1 PEM file
-2. Uses IPv8 peer discovery to automatically find teammates' UDP endpoints
-3. All nodes exchange endpoint information via IPv8 messages
-4. Sorts all three pubkeys lexicographically → canonical order
-5. Uses canonical order to assign fixed submitters: Round 1 → sorted[0], Round 2 → sorted[1], Round 3 → sorted[2]
-6. Tests connectivity via UDP ping/pong
+2. Advertises your UDP endpoint over IPv8
+3. Uses IPv8 peer discovery to find teammates and request their UDP endpoints
+4. Sends UDP hello/ping packets to every discovered teammate endpoint
+5. Sorts all three pubkeys lexicographically → canonical order
+6. Uses canonical order to assign fixed submitters: Round 1 → sorted[0], Round 2 → sorted[1], Round 3 → sorted[2]
 7. Reports peer map and submitter assignments
 
 **Manual mode (optional `--peer`):**
@@ -166,6 +167,7 @@ uv run lab2-prep \
 **Lab 2 prep UDP connectivity issues:**
 - Check all three nodes are running
 - For two-person testing, pass the single teammate key once; do not duplicate it.
+- If auto-detected UDP host is wrong, pass `--udp-host <your-lan-ip>`.
 - Verify firewall allows UDP on the specified ports
 - Confirm `--peer` addresses match where teammates are actually listening
 - If using different machines, ensure they can reach each other (try `ping` first)

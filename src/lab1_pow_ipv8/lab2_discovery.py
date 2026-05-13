@@ -198,6 +198,9 @@ def build_lab2_discovery_community():
             Returns a dict: pubkey_bin -> (host, port)
             """
             start_time = asyncio.get_event_loop().time()
+            target_pubkeys_set = set(target_pubkeys)
+            announced_to: set[bytes] = set()
+            last_request_sent: dict[bytes, float] = {}
 
             while asyncio.get_event_loop().time() - start_time < timeout:
                 # Check if we have all endpoints
@@ -205,17 +208,32 @@ def build_lab2_discovery_community():
                 if found_all:
                     return {pk: self.peer_endpoints[pk] for pk in target_pubkeys}
 
-                # Send requests to peers we're missing
+                # Send our endpoint and request theirs once IPv8 has found a target peer.
+                now = asyncio.get_event_loop().time()
                 for peer in self.get_peers():
                     peer_pubkey = peer.public_key.key_to_bin()
-                    if (
-                        peer_pubkey in target_pubkeys
-                        and peer_pubkey not in self.peer_endpoints
-                    ):
-                        try:
-                            self.ez_send(peer, EndpointRequestPayload())
-                        except Exception:
-                            pass
+                    if peer_pubkey not in target_pubkeys_set:
+                        continue
+
+                    if peer_pubkey not in announced_to:
+                        self.announce_endpoint_to_peers([peer])
+                        announced_to.add(peer_pubkey)
+
+                    if peer_pubkey in self.peer_endpoints:
+                        continue
+
+                    if now - last_request_sent.get(peer_pubkey, 0.0) < 0.5:
+                        continue
+
+                    try:
+                        self.ez_send(peer, EndpointRequestPayload())
+                        last_request_sent[peer_pubkey] = now
+                    except Exception as exc:
+                        LOGGER.debug(
+                            "Failed to request endpoint from %s...: %s",
+                            peer_pubkey.hex()[:16],
+                            exc,
+                        )
 
                 # Wait a bit before retrying
                 await asyncio.sleep(0.1)
