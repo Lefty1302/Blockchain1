@@ -136,7 +136,7 @@ async def run_prep_phase(
                 f"Waiting for {len(teammate_pubkeys_bin)} teammate(s) to announce endpoints..."
             )
             discovered_endpoints = await overlay.wait_for_endpoints(
-                teammate_pubkeys_bin, timeout=10.0
+                teammate_pubkeys_bin, timeout=300.0
             )
 
             if len(discovered_endpoints) < len(teammate_pubkeys_bin):
@@ -152,10 +152,10 @@ async def run_prep_phase(
                 if pubkey_bin in discovered_endpoints:
                     host, port = discovered_endpoints[pubkey_bin]
                     peers.append(PeerEndpoint(pubkey_hex, host, port))
-                    LOGGER.info(f"Discovered {pubkey_hex[:16]}... @ {host}:{port}")
+                    LOGGER.info(f"Discovered {pubkey_hex[-16:]}... @ {host}:{port}")
                 else:
                     LOGGER.error(
-                        f"Failed to discover endpoint for {pubkey_hex[:16]}..."
+                        f"Failed to discover endpoint for {pubkey_hex[-16:]}..."
                     )
                     return 1
 
@@ -281,7 +281,9 @@ def main() -> int:
                 return 1
             try:
                 args.peer_pubkeys = load_team_pubkeys(_local_pk)
-                LOGGER.info(f"Loaded {len(args.peer_pubkeys)} teammate pubkey(s) from pubkeys/")
+                LOGGER.info(
+                    f"Loaded {len(args.peer_pubkeys)} teammate pubkey(s) from pubkeys/"
+                )
             except RuntimeError as exc:
                 print(
                     f"Error: {exc}\n"
