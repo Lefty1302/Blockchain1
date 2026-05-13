@@ -7,7 +7,7 @@ import asyncio
 import logging
 import sys
 
-from .lab2_keyutil import extract_public_key_hex, load_team_pubkeys
+from .lab2_keyutil import extract_public_key_hex, fmt_peer, load_pubkey_name_map, load_team_pubkeys
 from .lab2_udp_prep import (
     UdpPrepServer,
     PeerEndpoint,
@@ -80,6 +80,7 @@ async def run_prep_phase(
     peers: list[PeerEndpoint],
     test_udp: bool,
     timeout: int,
+    name_map: dict[str, str],
     auto_discover: bool = False,
     teammate_pubkeys: list[str] | None = None,
     key_file: str = "lab1_identity.pem",
@@ -174,9 +175,17 @@ async def run_prep_phase(
                             port,
                         )
 
-                if new_peers:
-                    await announce_endpoint(
-                        local_ip, local_port, new_peers, local_pubkey
+            # Convert discovered endpoints to PeerEndpoint objects
+            peers = []
+            for pubkey_hex in teammate_pubkeys:
+                pubkey_bin = bytes.fromhex(pubkey_hex)
+                if pubkey_bin in discovered_endpoints:
+                    host, port = discovered_endpoints[pubkey_bin]
+                    peers.append(PeerEndpoint(pubkey_hex, host, port))
+                    LOGGER.info(f"Discovered {fmt_peer(pubkey_hex, name_map)} @ {host}:{port}")
+                else:
+                    LOGGER.error(
+                        f"Failed to discover endpoint for {fmt_peer(pubkey_hex, name_map)}"
                     )
 
                 if len(discovered_peers) < len(teammate_pubkeys_bin):
@@ -201,7 +210,7 @@ async def run_prep_phase(
 
         if test_udp:
             LOGGER.info("Running UDP connectivity test (ping/pong)...")
-            await run_udp_test(server, peers, local_pubkey)
+            await run_udp_test(server, peers, local_pubkey, name_map)
 
         # Compute canonical order (lexicographic by pubkey)
         all_pubkeys = [local_pubkey] + [p.pubkey_hex for p in peers]
@@ -210,16 +219,16 @@ async def run_prep_phase(
         LOGGER.info("=" * 60)
         LOGGER.info("Prep Phase Complete")
         LOGGER.info("=" * 60)
-        LOGGER.info(f"Local pubkey: {local_pubkey[:16]}...")
+        LOGGER.info(f"Local pubkey: {fmt_peer(local_pubkey, name_map)}")
         LOGGER.info(f"Canonical order (submitter per round):")
         for i, pk in enumerate(canonical_order, 1):
             role = get_submitter_for_round(canonical_order, i)
             is_me = " ← YOU" if pk == local_pubkey else ""
-            LOGGER.info(f"  Round {i}: {pk[:16]}...{is_me}")
+            LOGGER.info(f"  Round {i}: {fmt_peer(pk, name_map)}{is_me}")
 
         LOGGER.info("\nPeer map:")
         for peer in peers:
-            LOGGER.info(f"  {peer.pubkey_hex[:16]}... → {peer.host}:{peer.port}")
+            LOGGER.info(f"  {fmt_peer(peer.pubkey_hex, name_map)} → {peer.host}:{peer.port}")
         LOGGER.info("=" * 60)
 
         return 0
@@ -232,15 +241,34 @@ async def run_udp_test(
     server: UdpPrepServer,
     peers: list[PeerEndpoint],
     local_pubkey: str,
+    name_map: dict[str, str],
 ) -> None:
     """Test UDP connectivity by sending pings to all peers."""
     if not peers:
         LOGGER.warning("No peers provided for UDP test")
         return
 
-    LOGGER.info(f"Pinging {len(peers)} peer(s) until all respond...")
-    await ensure_udp_connectivity(server, peers, local_pubkey)
-    LOGGER.info("UDP test: all peers reachable")
+    # Send pings
+    tasks = [send_ping(p.host, p.port, local_pubkey) for p in peers]
+    results = await asyncio.gather(*tasks)
+
+    # Wait for responses
+    timeout = 2.0
+    responses = []
+    for peer in peers:
+        got_response = await server.wait_for_pong(peer.pubkey_hex, timeout=timeout)
+        if got_response:
+            LOGGER.info(f"✓ {fmt_peer(peer.pubkey_hex, name_map)} responded")
+            responses.append(True)
+        else:
+            LOGGER.warning(
+                f"✗ {fmt_peer(peer.pubkey_hex, name_map)} no response (timeout {timeout}s)"
+            )
+            responses.append(False)
+
+    success_count = sum(responses)
+    total_count = len(peers)
+    LOGGER.info(f"UDP test: {success_count}/{total_count} peers reachable")
 
 
 def main() -> int:
@@ -253,6 +281,7 @@ def main() -> int:
     logging.getLogger("ipv8.community").setLevel(logging.CRITICAL)
     globals()["LOGGER"] = logging.getLogger("lab2_prep")
 
+    name_map = load_pubkey_name_map()
     timeout = 300 if args.timeout is None else args.timeout
 
     # Handle --print-pubkey
@@ -315,7 +344,7 @@ def main() -> int:
     # Load local public key
     try:
         local_pubkey = extract_public_key_hex(args.pem)
-        LOGGER.info(f"Local public key: {local_pubkey[:16]}...")
+        LOGGER.info(f"Local public key: {fmt_peer(local_pubkey, name_map)}")
     except Exception as exc:
         print(f"Error loading public key: {exc}", file=sys.stderr)
         return 1
@@ -348,6 +377,7 @@ def main() -> int:
                     peers,
                     test_udp=args.test_udp,
                     timeout=timeout,
+                    name_map=name_map,
                     auto_discover=auto_discover,
                     teammate_pubkeys=args.peer_pubkeys if auto_discover else None,
                     key_file=args.pem,

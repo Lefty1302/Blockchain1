@@ -56,6 +56,27 @@ def load_team_pubkeys(local_pubkey_hex: str, pubkeys_dir: str = "pubkeys") -> li
     return pubkeys
 
 
+def load_pubkey_name_map(pubkeys_dir: str = "pubkeys") -> dict[str, str]:
+    """Return {pubkey_hex: name} built from the stem of each pubkeys/*.txt filename."""
+    result: dict[str, str] = {}
+    if not os.path.isdir(pubkeys_dir):
+        return result
+    for path in glob.glob(os.path.join(pubkeys_dir, "*.txt")):
+        name = os.path.splitext(os.path.basename(path))[0]
+        with open(path) as f:
+            content = f.read().strip()
+        if content:
+            result[content] = name
+    return result
+
+
+def fmt_peer(pubkey_hex: str, name_map: dict[str, str]) -> str:
+    """Format a pubkey as '[name] hex[:16]...' or 'hex[:16]...' when name is unknown."""
+    name = name_map.get(pubkey_hex)
+    prefix = f"[{name}] " if name else ""
+    return f"{prefix}{pubkey_hex[:16]}..."
+
+
 def print_public_key(pem_path: str) -> int:
     """CLI command to print public key from PEM file."""
     try:
