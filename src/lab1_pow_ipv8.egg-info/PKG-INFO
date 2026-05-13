@@ -1,6 +1,0 @@
-Metadata-Version: 2.4
-Name: lab1-pow-ipv8
-Version: 0.1.0
-Summary: CS4160 Lab 1 PoW over IPv8 client
-Requires-Python: >=3.10
-Requires-Dist: pyipv8 @ git+https://github.com/Tribler/py-ipv8.git

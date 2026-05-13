@@ -33,9 +33,10 @@ def test_pow_digest_matches_sha256() -> None:
     email = "bob@tudelft.nl"
     url = "https://github.com/bob/lab1"
     nonce = 123456
-    assert pow_digest(email, url, nonce) == sha256(
-        build_pow_input(email, url, nonce)
-    ).digest()
+    assert (
+        pow_digest(email, url, nonce)
+        == sha256(build_pow_input(email, url, nonce)).digest()
+    )
 
 
 def test_leading_zero_bits_counts_correctly() -> None:
@@ -53,6 +54,8 @@ def test_mine_pow_finds_solution_for_small_difficulty() -> None:
 
 
 def test_email_and_url_validation() -> None:
-    assert canonicalize_email("  ALICE@STUDENT.TUDELFT.NL ") == "alice@student.tudelft.nl"
+    assert (
+        canonicalize_email("  ALICE@STUDENT.TUDELFT.NL ") == "alice@student.tudelft.nl"
+    )
     validate_email("x@student.tudelft.nl")
     validate_github_url("https://github.com/org/repo")

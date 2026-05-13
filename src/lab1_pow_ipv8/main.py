@@ -10,7 +10,12 @@ import sys
 from .client import submit_pow
 from .constants import DEFAULT_DIFFICULTY
 from .pow import PowSolution, is_valid_pow, mine_pow
-from .validation import canonicalize_email, validate_email, validate_github_url, validate_nonce
+from .validation import (
+    canonicalize_email,
+    validate_email,
+    validate_github_url,
+    validate_nonce,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,6 +54,29 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=120.0,
         help="Seconds to wait for server response after submission",
+    )
+    parser.add_argument(
+        "--debug-peers",
+        action="store_true",
+        help="Log discovered peers and their public keys while searching for server",
+    )
+    parser.add_argument(
+        "--bootstrap",
+        action="append",
+        default=[],
+        help="Optional bootstrap address in host:port form (can be repeated)",
+    )
+    parser.add_argument(
+        "--walk-peers",
+        type=int,
+        default=30,
+        help="Random-walk target peers for discovery (default: 30)",
+    )
+    parser.add_argument(
+        "--walk-timeout",
+        type=float,
+        default=3.0,
+        help="Random-walk timeout seconds (default: 3.0)",
     )
     parser.add_argument(
         "--no-canonicalize-email",
@@ -108,7 +136,9 @@ def mine_or_use_nonce(
 def main() -> int:
     args = parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
 
     email = args.email if args.no_canonicalize_email else canonicalize_email(args.email)
     github_url = args.github_url
@@ -127,6 +157,13 @@ def main() -> int:
     if args.mine_only:
         return 0
 
+    bootstrap_addrs = []
+    for item in args.bootstrap:
+        if ":" not in item:
+            raise ValueError("--bootstrap must be in host:port form")
+        host, port_str = item.rsplit(":", 1)
+        bootstrap_addrs.append((host, int(port_str)))
+
     result = asyncio.run(
         submit_pow(
             email=email,
@@ -134,6 +171,10 @@ def main() -> int:
             nonce=solution.nonce,
             key_file=args.key_file,
             timeout_seconds=args.timeout,
+            debug_peers=args.debug_peers,
+            bootstrap_addrs=bootstrap_addrs or None,
+            walk_peers=args.walk_peers,
+            walk_timeout=args.walk_timeout,
         )
     )
     status = "ACCEPTED" if result.success else "REJECTED"

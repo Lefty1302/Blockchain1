@@ -74,7 +74,9 @@ def mine_pow(
     started = perf_counter()
 
     for nonce in range(start_nonce, max_nonce + 1):
-        digest = sha256(prefix + nonce.to_bytes(8, byteorder="big", signed=False)).digest()
+        digest = sha256(
+            prefix + nonce.to_bytes(8, byteorder="big", signed=False)
+        ).digest()
         attempts += 1
 
         if leading_zero_bits(digest) >= difficulty:

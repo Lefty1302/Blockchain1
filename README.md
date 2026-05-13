@@ -2,13 +2,24 @@
 
 This repository contains a complete Python client for **CS4160 Lab 1**.
 
-It can:
+## Quick Start
 
-1. Mine a valid PoW for `(email, github_url, nonce)`
-2. Join the IPv8 community for the lab
-3. Discover peers and filter strictly on the server public key
-4. Submit the signed payload
-5. Receive and print the server response
+This repository uses the uv package manager. Install it if you don’t have it yet:
+
+```powershell
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Windows
+irm https://astral.sh/uv/install.ps1 | iex
+```
+
+**Then run the client:**
+
+```powershell
+uv lock
+uv sync
+uv run lab1 --email netid@tudelft.nl --github-url https://github.com/vesk4000/BitConnect
+```
 
 ## Project layout
 
@@ -19,26 +30,36 @@ It can:
 - `src/lab1_pow_ipv8/main.py` – CLI entrypoint
 - `tests/test_pow.py` – local tests for PoW correctness
 
-## Setup
+## Setup (UV)
 
-Create a virtual environment, install dependencies, and run tests.
+UV manages the virtual environment and installs dependencies for you.
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python -m pip install -r requirements-dev.txt
-python -m pip install -e .
-pytest -q
+uv lock
+uv sync
 ```
+
+### Pre-commit (format on commit)
+
+```powershell
+uv sync
+uv run pre-commit install
+```
+
+Black uses spaces (not tabs) by design.
 
 ## Usage
 
 Run the client from the project root:
 
 ```powershell
-python -m lab1_pow_ipv8.main --email your.name@student.tudelft.nl --github-url https://github.com/you/bitconnect-lab1
+uv run python -m lab1_pow_ipv8.main --email vmitev@tudelft.nl --github-url https://github.com/vesk4000/BitConnect
+```
+
+Or use the shorthand script:
+
+```powershell
+uv run lab1 --email vmitev@tudelft.nl --github-url https://github.com/vesk4000/BitConnect
 ```
 
 ### Useful flags
@@ -46,9 +67,14 @@ python -m lab1_pow_ipv8.main --email your.name@student.tudelft.nl --github-url h
 - `--key-file lab1_identity.pem` to persist/reuse your private key
 - `--difficulty 28` (default for lab server)
 - `--mine-only` mine and print nonce, but do not submit
+- `--nonce <N>` provide an existing nonce (skip mining when used with `--submit-only`)
 - `--submit-only --nonce <N>` skip mining and only submit
 - `--timeout 120` seconds to wait for server reply
 - `--no-canonicalize-email` send/hash the email exactly as typed
+- `--debug-peers` log discovered peers and public keys while searching
+- `--bootstrap host:port` manually seed discovery (can be repeated)
+- `--walk-peers 50` adjust random-walk target peers
+- `--walk-timeout 5` adjust random-walk timeout seconds
 
 ## Notes and pitfalls
 
@@ -57,8 +83,89 @@ python -m lab1_pow_ipv8.main --email your.name@student.tudelft.nl --github-url h
 - The client ignores responses from peers whose public key does not match the given server key.
 - Keep your `.pem` file safe: this is your identity for later labs.
 
+## Lab 2 – Coordinated Group Signing Prep Phase
+
+Lab 2 requires fast UDP coordination between three teammates. The **prep phase** sets this up before the timed challenge.
+
+### Quick Start
+
+**Step 1: Extract your public key** 
+
+```powershell
+uv run lab2-prep --print-pubkey --pem lab1_identity.pem
+```
+
+Then make a new *.txt file in ./pubkeys with your public key
+
+**Step 2: Run prep with all three team members**
+
+All three nodes run simultaneously (same command on each machine with different `--udp-port`):
+
+```powershell
+uv run lab2-prep --udp-port 5000 --test-udp
+```
+
+Teammate public keys are auto-loaded from `./pubkeys/*.txt` (whichever file is not your own key). IPv8 then discovers each teammate's UDP endpoint. Each node just needs:
+- Its own UDP port (different for each: 5000, 5001, 5002)
+- A populated `./pubkeys/` directory (one `.txt` per team member)
+
+Override with `--peer-pubkey <hex>` if you want to bypass the directory (accepts 1 or 2 values for partial-team dev runs).
+
+Expected output: canonical order, peer map, and ✓ connectivity test.
+
+**Optional: Manual endpoint mode** (if you know IPs ahead of time)
+
+```powershell
+uv run lab2-prep \
+  --udp-port 5000 \
+  --peer 192.168.1.10:5001 --peer-pubkey <PUBKEY_A> \
+  --peer 192.168.1.11:5002 --peer-pubkey <PUBKEY_B> \
+  --test-udp
+```
+
+### Lab 2 Prep Options
+
+- `--print-pubkey` – Extract pubkey from PEM, print & exit
+- `--pem <path>` – PEM file (default: `lab1_identity.pem`)
+- `--udp-port <int>` – Local UDP port (required)
+- `--peer-pubkey <hex>` – Teammate pubkey hex (repeatable, 1 or 2 values; omit to auto-load from `./pubkeys/`)
+- `--peer <host:port>` – (Optional) Bypass IPv8 discovery and manually specify endpoint (repeatable)
+- `--test-udp` – Run UDP connectivity test (ping/pong)
+- `--debug` – Enable debug logging
+
+### How it works
+
+**Default mode (IPv8 auto-discovery):**
+1. Extracts your Ed25519 public key from Lab 1 PEM file
+2. Loads teammate public keys from `./pubkeys/` (unless `--peer-pubkey` is passed)
+3. Joins the Lab 2 IPv8 community and uses peer discovery to find teammates' UDP endpoints (only peers whose pubkey matches a teammate are accepted)
+4. All nodes exchange endpoint information via IPv8 messages, then sort all three pubkeys lexicographically → canonical order
+5. Uses canonical order to assign fixed submitters: Round 1 → sorted[0], Round 2 → sorted[1], Round 3 → sorted[2]
+6. Tests connectivity via UDP ping/pong
+7. Reports peer map and submitter assignments
+
+**Manual mode (optional `--peer`):**
+- Use `--peer host:port` to manually specify teammates' endpoints instead of auto-discovery
+- Useful if IPv8 discovery isn't working or for known static IPs
+
+---
+
 ## Troubleshooting
 
 - If no server response arrives, ensure your packet is sent with IPv8 authenticated messaging (`ez_send`, as implemented).
 - If you get invalid hash rejections, confirm you are hashing the exact same email/URL strings you submit.
-- If dependency installation on Windows fails, ensure libsodium prerequisites for IPv8 are installed (see py-ipv8 docs).
+- If logs show `Known peers: none yet`, your network isn't discovering peers; try a different network or use `--bootstrap host:port`
+  from a TA/classmate to seed discovery.
+- On Windows, the client auto-downloads the official libsodium MSVC bundle into `vendor/libsodium/` if the DLL is missing,
+  and prepends that folder to `PATH` for the current process. This does **not** modify your system PATH.
+- On macOS/Linux, the client first tries your system libsodium. If it's missing, you can either:
+  - Install via your OS package manager (e.g. `brew install libsodium`, `apt install libsodium`)
+  - Or set `LIBSODIUM_URL` to a direct archive URL that contains a prebuilt `libsodium.dylib` or `libsodium.so`.
+- You can always point to an existing local folder with the library via `LIBSODIUM_DIR`.
+
+**Lab 2 prep UDP connectivity issues:**
+- Check all three nodes are running
+- Verify firewall allows UDP on the specified ports
+- Confirm `--peer` addresses match where teammates are actually listening
+- If using different machines, ensure they can reach each other (try `ping` first)
+

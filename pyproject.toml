@@ -9,7 +9,14 @@ description = "CS4160 Lab 1 PoW over IPv8 client"
 requires-python = ">=3.10"
 dependencies = [
   "pyipv8 @ git+https://github.com/Tribler/py-ipv8.git",
+  "pytest>=8.0.0",
+  "black>=24.0.0",
+  "pre-commit>=3.7.0",
 ]
+
+[project.scripts]
+lab1 = "lab1_pow_ipv8.main:main"
+lab2-prep = "lab1_pow_ipv8.lab2_main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -17,3 +24,8 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+include = "\\.pyi?$"

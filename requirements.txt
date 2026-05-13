@@ -1,1 +1,0 @@
-pyipv8 @ git+https://github.com/Tribler/py-ipv8.git
