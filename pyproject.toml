@@ -17,6 +17,7 @@ dependencies = [
 [project.scripts]
 lab1 = "lab1_pow_ipv8.main:main"
 lab2-prep = "lab1_pow_ipv8.lab2.prep_cli:main"
+lab2-race = "lab1_pow_ipv8.lab2.race_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
