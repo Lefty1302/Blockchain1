@@ -16,6 +16,7 @@ from .lab2_udp_prep import (
     get_submitter_for_round,
     send_ping,
     announce_endpoint,
+    ensure_udp_connectivity,
 )
 
 
@@ -96,6 +97,10 @@ async def run_prep_phase(
             LOGGER.error("--auto-discover requires --peer-pubkey arguments")
             return 1
 
+    server = UdpPrepServer(local_port, local_pubkey)
+    await server.start()
+    if auto_discover:
+        assert teammate_pubkeys is not None
         # Use IPv8 discovery to get teammate endpoints
         from .libsodium_bootstrap import ensure_libsodium
         from .lab2_discovery import build_lab2_discovery_community
@@ -139,7 +144,6 @@ async def run_prep_phase(
             teammate_pubkeys_bin = [bytes.fromhex(pk) for pk in teammate_pubkeys]
             overlay.set_target_pubkeys(teammate_pubkeys_bin)
 
-            # Request endpoints from teammates
             LOGGER.info(
                 f"Waiting for {len(teammate_pubkeys_bin)} teammate(s) to announce endpoints..."
             )
@@ -147,31 +151,43 @@ async def run_prep_phase(
                 teammate_pubkeys_bin, timeout=float(timeout)
             )
 
-            if len(discovered_endpoints) < len(teammate_pubkeys_bin):
-                missing = len(teammate_pubkeys_bin) - len(discovered_endpoints)
-                LOGGER.warning(
-                    f"Only discovered {len(discovered_endpoints)}/{len(teammate_pubkeys_bin)} endpoints"
+            discovered_peers: dict[str, PeerEndpoint] = {}
+            while len(discovered_peers) < len(teammate_pubkeys_bin):
+                discovered_endpoints = await overlay.wait_for_endpoints(
+                    teammate_pubkeys_bin, timeout=300.0
                 )
+                new_peers: list[PeerEndpoint] = []
+                for pubkey_hex in teammate_pubkeys:
+                    pubkey_bin = bytes.fromhex(pubkey_hex)
+                    if (
+                        pubkey_bin in discovered_endpoints
+                        and pubkey_hex not in discovered_peers
+                    ):
+                        host, port = discovered_endpoints[pubkey_bin]
+                        peer = PeerEndpoint(pubkey_hex, host, port)
+                        discovered_peers[pubkey_hex] = peer
+                        new_peers.append(peer)
+                        LOGGER.info(
+                            "Discovered %s... @ %s:%s",
+                            pubkey_hex[:16],
+                            host,
+                            port,
+                        )
 
-            # Convert discovered endpoints to PeerEndpoint objects
-            peers = []
-            for pubkey_hex in teammate_pubkeys:
-                pubkey_bin = bytes.fromhex(pubkey_hex)
-                if pubkey_bin in discovered_endpoints:
-                    host, port = discovered_endpoints[pubkey_bin]
-                    peers.append(PeerEndpoint(pubkey_hex, host, port))
-                    LOGGER.info(f"Discovered {pubkey_hex[:16]}... @ {host}:{port}")
-                else:
-                    LOGGER.error(
-                        f"Failed to discover endpoint for ...{pubkey_hex[-16:]}"
+                if new_peers:
+                    await announce_endpoint(
+                        local_ip, local_port, new_peers, local_pubkey
                     )
-                    return 1
+
+                if len(discovered_peers) < len(teammate_pubkeys_bin):
+                    remaining = len(teammate_pubkeys_bin) - len(discovered_peers)
+                    LOGGER.info("Waiting on %d more teammate endpoint(s)...", remaining)
+                    await asyncio.sleep(1.0)
+
+            peers = list(discovered_peers.values())
 
         finally:
             await ipv8.stop()
-
-    server = UdpPrepServer(local_port, local_pubkey)
-    await server.start()
 
     try:
         # Announce our endpoint to all known peers
@@ -218,29 +234,13 @@ async def run_udp_test(
     local_pubkey: str,
 ) -> None:
     """Test UDP connectivity by sending pings to all peers."""
-    LOGGER.info(f"Pinging {len(peers)} peer(s)...")
+    if not peers:
+        LOGGER.warning("No peers provided for UDP test")
+        return
 
-    # Send pings
-    tasks = [send_ping(p.host, p.port, local_pubkey) for p in peers]
-    results = await asyncio.gather(*tasks)
-
-    # Wait for responses
-    timeout = 2.0
-    responses = []
-    for peer in peers:
-        got_response = await server.wait_for_pong(peer.pubkey_hex, timeout=timeout)
-        if got_response:
-            LOGGER.info(f"✓ {peer.pubkey_hex[:16]}... responded")
-            responses.append(True)
-        else:
-            LOGGER.warning(
-                f"✗ {peer.pubkey_hex[:16]}... no response (timeout {timeout}s)"
-            )
-            responses.append(False)
-
-    success_count = sum(responses)
-    total_count = len(peers)
-    LOGGER.info(f"UDP test: {success_count}/{total_count} peers reachable")
+    LOGGER.info(f"Pinging {len(peers)} peer(s) until all respond...")
+    await ensure_udp_connectivity(server, peers, local_pubkey)
+    LOGGER.info("UDP test: all peers reachable")
 
 
 def main() -> int:
@@ -292,7 +292,9 @@ def main() -> int:
                 return 1
             try:
                 args.peer_pubkeys = load_team_pubkeys(_local_pk)
-                LOGGER.info(f"Loaded {len(args.peer_pubkeys)} teammate pubkey(s) from pubkeys/")
+                LOGGER.info(
+                    f"Loaded {len(args.peer_pubkeys)} teammate pubkey(s) from pubkeys/"
+                )
             except RuntimeError as exc:
                 print(
                     f"Error: {exc}\n"

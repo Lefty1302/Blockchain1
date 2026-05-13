@@ -189,6 +189,57 @@ async def send_ping(host: str, port: int, local_pubkey_hex: str) -> bool:
         return False
 
 
+async def ensure_udp_connectivity(
+    server: UdpPrepServer,
+    peers: list[PeerEndpoint],
+    local_pubkey_hex: str,
+    *,
+    retry_interval: float = 2.0,
+    ping_timeout: float = 2.0,
+) -> None:
+    """Keep pinging peers until all respond at least once."""
+    pending: dict[str, PeerEndpoint] = {p.pubkey_hex: p for p in peers}
+    attempt = 0
+
+    while pending:
+        attempt += 1
+        LOGGER.info(
+            "UDP connectivity attempt %d: waiting on %d peer(s)",
+            attempt,
+            len(pending),
+        )
+
+        # Send pings to peers still pending
+        await asyncio.gather(
+            *[
+                send_ping(peer.host, peer.port, local_pubkey_hex)
+                for peer in pending.values()
+            ]
+        )
+
+        # Wait for pongs (bounded by ping_timeout)
+        results = await asyncio.gather(
+            *[
+                server.wait_for_pong(peer.pubkey_hex, timeout=ping_timeout)
+                for peer in pending.values()
+            ]
+        )
+
+        responded = [
+            peer_key for peer_key, ok in zip(list(pending.keys()), results) if ok
+        ]
+
+        for key in responded:
+            peer = pending.pop(key, None)
+            if peer:
+                LOGGER.info("✓ %s responded", peer.pubkey_hex[:16] + "...")
+
+        if pending:
+            waiting = ", ".join([k[:16] + "..." for k in pending.keys()])
+            LOGGER.warning("Still waiting on %d peer(s): %s", len(pending), waiting)
+            await asyncio.sleep(retry_interval)
+
+
 async def announce_endpoint(
     host: str,
     port: int,
